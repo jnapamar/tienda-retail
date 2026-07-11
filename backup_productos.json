@@ -1,0 +1,25 @@
+[
+  {
+    "id": 1783610682243,
+    "nombre": "auto",
+    "precio": 10000,
+    "categoria": "Tecnología",
+    "descripcion": "carro 2020",
+    "imagen": "/uploads/1783610682197.jpg"
+  },
+  {
+    "id": 1783609959687,
+    "nombre": "TV 43",
+    "precio": 3000,
+    "categoria": "Tecnología",
+    "imagen": "C:\\Users\\PERU\\Documents\\SEÑALES_TRANSITO\\atos_2020",
+    "descripcion": "tv redonda"
+  },
+  {
+    "id": 1783609419211,
+    "nombre": "TV 43",
+    "precio": 5000,
+    "categoria": "Tecnología",
+    "descripcion": "43 x 45"
+  }
+]

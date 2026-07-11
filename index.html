@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Ripley - Tienda</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+        body { background-color: #f4f6f9; padding: 20px; color: #333; }
+        header { background: #73246c; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; }
+        .container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 300px 1fr; gap: 30px; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
+        h3 { margin-bottom: 20px; border-bottom: 2px solid #73246c; padding-bottom: 5px; }
+        .btn-principal { background: #22c55e; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
+        .btn-principal:hover { background: #16a34a; }
+        .catalogo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .product-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .product-img { width: 100%; height: 180px; object-fit: cover; background: #eee; }
+        .product-body { padding: 15px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; }
+        .product-title { font-size: 15px; font-weight: bold; margin-bottom: 5px; }
+        .cat-tag { font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: bold; align-self: flex-start; margin-bottom: 8px; }
+        .stock-tag { font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+        .product-desc { font-size: 12px; color: #666; margin-bottom: 10px; line-height: 1.3; }
+        .product-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        .price { font-weight: bold; color: #73246c; font-size: 16px; }
+        .btn-comprar { background: #73246c; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; }
+        .btn-comprar:hover { background: #5a1c54; }
+        .btn-comprar:disabled { background: #ccc; cursor: not-allowed; }
+        .item-carrito { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #ddd; }
+    </style>
+</head>
+<body>
+
+    <header><h1>🛍️ MINI RIPLEY - TIENDA</h1></header>
+
+    <div class="container">
+        <div class="box">
+            <h3>🛒 Mi Carrito (<span id="cart-count">0</span>)</h3>
+            <div id="items-carrito-lista"><p style="color:#888; font-size:13px;">El carrito está vacío.</p></div>
+            <div style="margin-top:15px; font-weight:bold; font-size:16px; display:flex; justify-content:space-between; margin-bottom: 15px;">
+                <span>Total:</span><span>S/. <span id="cart-total">0.00</span></span>
+            </div>
+            <button class="btn-principal" onclick="procesarPago()">Procesar Compra</button>
+        </div>
+
+        <div class="box">
+            <h3>Productos Disponibles</h3>
+            <div id="catalogo-productos" class="catalogo-grid"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/productos';
+        let listaProductosDB = []; // Guardamos copia de los productos locales
+        let carrito = [];
+
+        window.onload = obtenerProductosDelBackend;
+
+        async function obtenerProductosDelBackend() {
+            try {
+                const res = await fetch(API_URL);
+                listaProductosDB = await res.json();
+                renderizarCatalogo();
+            } catch (error) { document.getElementById('catalogo-productos').innerHTML = "Error."; }
+        }
+
+        function renderizarCatalogo() {
+            const contenedor = document.getElementById('catalogo-productos');
+            contenedor.innerHTML = "";
+
+            if(listaProductosDB.length === 0) {
+                contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1; text-align:center;'>No hay productos.</p>";
+                return;
+            }
+
+            listaProductosDB.forEach(p => {
+                const imgUrl = p.imagen ? p.imagen : 'https://via.placeholder.com/180?text=No+Image';
+                
+                // Evaluar si el botón debe deshabilitarse por falta de stock
+                const estaAgotado = p.stock <= 0;
+                const textoBoton = estaAgotado ? 'Agotado' : 'Agregar';
+                const colorStock = estaAgotado ? 'red' : '#16a34a';
+
+                contenedor.innerHTML += `
+                    <div class="product-card">
+                        <img src="${imgUrl}" class="product-img">
+                        <div class="product-body">
+                            <div>
+                                <span class="cat-tag">${p.categoria}</span>
+                                <div class="product-title">${p.nombre}</div>
+                                <p class="product-desc">${p.descripcion}</p>
+                                <div class="stock-tag" style="color: ${colorStock}">Stock: ${p.stock} unds</div>
+                            </div>
+                            <div class="product-footer">
+                                <div class="price">S/. ${p.precio.toFixed(2)}</div>
+                                <button class="btn-comprar" ${estaAgotado ? 'disabled' : ''} onclick="agregarAlCarrito('${p.nombre}', ${p.precio})">${textoBoton}</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function agregarAlCarrito(nombre, precio) {
+            // Buscar el producto original para comprobar que aún tenga stock virtual antes de agregar
+            let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
+            
+            if (prodOriginal && prodOriginal.stock > 0) {
+                prodOriginal.stock -= 1; // Restamos temporalmente en la interfaz
+                carrito.push({ nombre, precio });
+                actualizarInterfazCarrito();
+                renderizarCatalogo(); // Re-dibujar tarjetas para actualizar el número de stock visual
+            } else {
+                alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
+            }
+        }
+
+        function actualizarInterfazCarrito() {
+            const lista = document.getElementById('items-carrito-lista');
+            const totalSpan = document.getElementById('cart-total');
+            const countSpan = document.getElementById('cart-count');
+            countSpan.innerText = carrito.length;
+            
+            if(carrito.length === 0) {
+                lista.innerHTML = "<p style='color:#888; font-size:13px;'>El carrito está vacío.</p>";
+                totalSpan.innerText = "0.00";
+                return;
+            }
+
+            lista.innerHTML = "";
+            let total = 0;
+            carrito.forEach((item) => {
+                total += item.precio;
+                lista.innerHTML += `<div class="item-carrito"><span>${item.nombre}</span><strong>S/. ${item.precio.toFixed(2)}</strong></div>`;
+            });
+            totalSpan.innerText = total.toFixed(2);
+        }
+
+        async function procesarPago() {
+            if(carrito.length === 0) return alert("Agrega productos primero.");
+            
+            try {
+                // Enviamos el carrito al servidor para que reste el stock real en la BD
+                const res = await fetch('/api/productos/comprar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ carrito })
+                });
+
+                if (res.ok) {
+                    alert("🛒 ¡Compra verificada y procesada con éxito! El stock ha sido descontado.");
+                    carrito = [];
+                    actualizarInterfazCarrito();
+                    obtenerProductosDelBackend(); // Recargar datos frescos de la BD
+                }
+            } catch (error) { alert("Error al procesar el pago."); }
+        }
+    </script>
+</body>
+</html>

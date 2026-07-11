@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Administrador - Ripley</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+        body { background-color: #f4f6f9; padding: 20px; color: #333; }
+        header { background: #222; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto; }
+        h3 { margin-bottom: 20px; border-bottom: 2px solid #222; padding-bottom: 5px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #555; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        button { background: #222; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
+        button:hover { background: #444; }
+    </style>
+</head>
+<body>
+
+    <header><h1>🛠️ PANEL DE CONTROL: ADMINISTRADOR</h1></header>
+
+    <div class="box">
+        <h3>Subir Nuevo Producto al Catálogo</h3>
+        <form id="formProducto" onsubmit="enviarAlBackend(event)">
+            <div class="form-group"><label>Nombre del Ítem</label><input type="text" id="nombre" required></div>
+            <div class="form-group" style="display: flex; gap: 15px;">
+                <div style="flex: 1;"><label>Precio (S/.)</label><input type="number" step="0.01" id="precio" required></div>
+                <div style="flex: 1;"><label>Stock Inicial (Unidades)</label><input type="number" id="stock" min="1" required placeholder="Ej. 10"></div>
+            </div>
+            <div class="form-group">
+                <label>Categoría</label>
+                <select id="categoria">
+                    <option value="Tecnología">Tecnología</option>
+                    <option value="Moda">Moda</option>
+                    <option value="Servicios">Servicios</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Seleccionar Imagen Física</label><input type="file" id="imagen" accept="image/*" required></div>
+            <div class="form-group"><label>Descripción / Detalles</label><textarea id="descripcion" rows="3" required></textarea></div>
+            <button type="submit">Publicar en la Tienda</button>
+        </form>
+    </div>
+
+    <script>
+        async function enviarAlBackend(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('nombre', document.getElementById('nombre').value);
+            formData.append('precio', document.getElementById('precio').value);
+            formData.append('stock', document.getElementById('stock').value); // <-- ENVIAR STOCK
+            formData.append('categoria', document.getElementById('categoria').value);
+            formData.append('descripcion', document.getElementById('descripcion').value);
+            formData.append('imagen', document.getElementById('imagen').files[0]);
+
+            try {
+                const res = await fetch('/api/productos', { method: 'POST', body: formData });
+                if(res.ok) {
+                    alert("✅ Producto publicado con stock inicial");
+                    document.getElementById('formProducto').reset();
+                }
+            } catch (error) { alert("Error al subir."); }
+        }
+    </script>
+</body>
+</html>
