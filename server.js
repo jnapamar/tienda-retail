@@ -1,37 +1,44 @@
-const express = require('express');
+const express = require('require');
+const expressApp = express();
 const mongoose = require('mongoose');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// Middlewares
+expressApp.use(cors());
+expressApp.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use(express.static(__dirname));
+// Servir archivos estáticos
+expressApp.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+expressApp.use(express.static(__dirname));
 
+// Configuración de Puertos para Render
 const PORT = process.env.PORT || 5000;
 const FILE_DB_PATH = path.join(__dirname, 'backup_productos.json');
 
+// Asegurar directorios mínimos en local
 if (!fs.existsSync(FILE_DB_PATH)) fs.writeFileSync(FILE_DB_PATH, JSON.stringify([]));
 if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'));
 
+// Configuración de Multer para Imágenes
 const storage = multer.diskStorage({
     destination: (req, file, cb) => { cb(null, 'uploads/'); },
     filename: (req, file, cb) => { cb(null, Date.now() + path.extname(file.originalname)); }
 });
 const upload = multer({ storage: storage });
 
+// Conexión limpia a MongoDB (Compatible con Atlas en producción y Local en tu PC)
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tienda_retail_db';
+
 mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Conectado con éxito a MongoDB'))
-    .catch((err) => console.log('⚠️ Error o usando contingencia local:', err));
-    .then(() => console.log('✅ Conectado con éxito a MongoDB Local'))
-    .catch(() => console.log('⚠️ Usando Base de datos por archivo local.'));
+    .catch((err) => {
+        console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message);
+    });
 
-// AGREGAMOS STOCK (Number) AL ESQUEMA
+// Esquema de Productos
 const ProductoSchema = new mongoose.Schema({
     nombre: String,
     precio: Number,
@@ -43,7 +50,7 @@ const ProductoSchema = new mongoose.Schema({
 const Producto = mongoose.model('Producto', ProductoSchema);
 
 // API POST: Recibir producto con Stock
-app.post('/api/productos', upload.single('imagen'), async (req, res) => {
+expressApp.post('/api/productos', upload.single('imagen'), async (req, res) => {
     try {
         const rutaImagen = req.file ? `/uploads/${req.file.filename}` : '';
         
@@ -53,48 +60,56 @@ app.post('/api/productos', upload.single('imagen'), async (req, res) => {
             categoria: req.body.categoria,
             descripcion: req.body.descripcion,
             imagen: rutaImagen,
-            stock: parseInt(req.body.stock) // <-- GUARDAR STOCK
+            stock: parseInt(req.body.stock) || 0
         };
 
+        // Verificamos si Mongoose está conectado (estado 1 = conectado)
         if (mongoose.connection.readyState === 1) {
             const nuevo = new Producto(datosProducto);
             await nuevo.save();
-            return res.status(201).json({ mensaje: "Guardado", producto: nuevo });
+            return res.status(201).json({ mensaje: "Guardado en MongoDB", producto: nuevo });
         } else {
+            // Contingencia Local por Archivos
             const datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             const nuevoItem = { id: Date.now(), ...datosProducto };
             datos.unshift(nuevoItem);
             fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datos, null, 2));
-            return res.status(201).json({ mensaje: "Guardado Local", producto: nuevoItem });
+            return res.status(201).json({ mensaje: "Guardado en contingencia Local", producto: nuevoItem });
         }
     } catch (error) {
-        res.status(400).json({ error: "Error" });
+        res.status(400).json({ error: "Error al guardar el producto" });
     }
 });
 
 // API GET: Listar productos
-app.get('/api/productos', async (req, res) => {
+expressApp.get('/api/productos', async (req, res) => {
     try {
         if (mongoose.connection.readyState === 1) {
-            return res.json(await Producto.find().sort({ _id: -1 }));
+            const productos = await Producto.find().sort({ _id: -1 });
+            return res.json(productos);
         } else {
             return res.json(JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8')));
         }
-    } catch (error) { res.status(500).json({ error: "Error" }); }
+    } catch (error) { 
+        res.status(500).json({ error: "Error al obtener productos" }); 
+    }
 });
 
-// NUEVA API POST: Restar Stock al procesar la compra
-app.post('/api/productos/comprar', async (req, res) => {
+// API POST: Restar Stock al procesar la compra
+expressApp.post('/api/productos/comprar', async (req, res) => {
     try {
-        const { carrito } = req.body; // Recibe la lista de productos vendidos
+        const { carrito } = req.body;
+
+        if (!carrito || carrito.length === 0) {
+            return res.status(400).json({ error: "El carrito está vacío" });
+        }
 
         if (mongoose.connection.readyState === 1) {
             for (let item of carrito) {
-                // Buscamos por nombre y restamos la cantidad comprada (1 por cada clic)
+                // Restamos la cantidad adecuada (puedes cambiar -1 por la cantidad comprada si aplica)
                 await Producto.updateOne({ nombre: item.nombre }, { $inc: { stock: -1 } });
             }
         } else {
-            // Si está en modo archivo local backup
             let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             for (let item of carrito) {
                 let p = datos.find(prod => prod.nombre === item.nombre);
@@ -108,4 +123,4 @@ app.post('/api/productos/comprar', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 Servidor en http://localhost:${PORT}`));
+expressApp.listen(PORT, () => console.log(`🚀 Servidor corriendo en el puerto ${PORT}`));
