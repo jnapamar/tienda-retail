@@ -1,10 +1,12 @@
-const express = require('require');
+const express = require('express'); //  ¡Cambiado 'require' por 'express'!
 const expressApp = express();
 const mongoose = require('mongoose');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+
+const app = express();
 
 // Middlewares
 expressApp.use(cors());
