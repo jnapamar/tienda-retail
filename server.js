@@ -1,26 +1,29 @@
-const express = require('express'); //  ¡Cambiado 'require' por 'express'!
-const expressApp = express();
+const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
+// Usamos ÚNICAMENTE 'app' para evitar duplicados y conflictos
 const app = express();
 
-// Middlewares
-expressApp.use(cors());
-expressApp.use(express.json());
+// 1. CONFIGURACIONES GENERALES (MIDDLEWARES)
+app.use(cors());
+app.use(express.json());
 
-// Servir archivos estáticos
-expressApp.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-expressApp.use(express.static(__dirname));
+// 2. SERVIR ARCHIVOS ESTÁTICOS (Aquí se soluciona lo de tus imágenes)
+// Esto mapea la ruta de internet '/uploads' a tu carpeta física 'uploads'
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Si tu HTML, CSS y JS principales están sueltos en la raíz, esto los servirá en internet:
+app.use(express.static(__dirname));
 
 // Configuración de Puertos para Render
 const PORT = process.env.PORT || 5000;
 const FILE_DB_PATH = path.join(__dirname, 'backup_productos.json');
 
-// Asegurar directorios mínimos en local
+// Asegurar directorios mínimos en el servidor
 if (!fs.existsSync(FILE_DB_PATH)) fs.writeFileSync(FILE_DB_PATH, JSON.stringify([]));
 if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'));
 
@@ -51,8 +54,10 @@ const ProductoSchema = new mongoose.Schema({
 });
 const Producto = mongoose.model('Producto', ProductoSchema);
 
+// --- TUS RUTAS (Todas unificadas bajo 'app') ---
+
 // API POST: Recibir producto con Stock
-expressApp.post('/api/productos', upload.single('imagen'), async (req, res) => {
+app.post('/api/productos', upload.single('imagen'), async (req, res) => {
     try {
         const rutaImagen = req.file ? `/uploads/${req.file.filename}` : '';
         
@@ -65,13 +70,11 @@ expressApp.post('/api/productos', upload.single('imagen'), async (req, res) => {
             stock: parseInt(req.body.stock) || 0
         };
 
-        // Verificamos si Mongoose está conectado (estado 1 = conectado)
         if (mongoose.connection.readyState === 1) {
             const nuevo = new Producto(datosProducto);
             await nuevo.save();
             return res.status(201).json({ mensaje: "Guardado en MongoDB", producto: nuevo });
         } else {
-            // Contingencia Local por Archivos
             const datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             const nuevoItem = { id: Date.now(), ...datosProducto };
             datos.unshift(nuevoItem);
@@ -84,7 +87,7 @@ expressApp.post('/api/productos', upload.single('imagen'), async (req, res) => {
 });
 
 // API GET: Listar productos
-expressApp.get('/api/productos', async (req, res) => {
+app.get('/api/productos', async (req, res) => {
     try {
         if (mongoose.connection.readyState === 1) {
             const productos = await Producto.find().sort({ _id: -1 });
@@ -98,7 +101,7 @@ expressApp.get('/api/productos', async (req, res) => {
 });
 
 // API POST: Restar Stock al procesar la compra
-expressApp.post('/api/productos/comprar', async (req, res) => {
+app.post('/api/productos/comprar', async (req, res) => {
     try {
         const { carrito } = req.body;
 
@@ -108,7 +111,6 @@ expressApp.post('/api/productos/comprar', async (req, res) => {
 
         if (mongoose.connection.readyState === 1) {
             for (let item of carrito) {
-                // Restamos la cantidad adecuada (puedes cambiar -1 por la cantidad comprada si aplica)
                 await Producto.updateOne({ nombre: item.nombre }, { $inc: { stock: -1 } });
             }
         } else {
@@ -125,4 +127,5 @@ expressApp.post('/api/productos/comprar', async (req, res) => {
     }
 });
 
-expressApp.listen(PORT, () => console.log(`🚀 Servidor corriendo en el puerto ${PORT}`));
+// Encendemos el servidor usando 'app'
+app.listen(PORT, () => console.log(`🚀 Servidor corriendo en el puerto ${PORT}`));
