@@ -144,7 +144,7 @@
                 const res = await fetch('/api/productos/comprar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ carrito }) 
+                    body: JSON.stringify(carrito)
                     // Nota: Si tu backend falla con esto, prueba cambiando la línea anterior por:
                     // body: JSON.stringify(carrito)
                 });
