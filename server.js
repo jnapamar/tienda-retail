@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 2. SERVIR ARCHIVOS ESTÁTICOS (Aquí se soluciona lo de tus imágenes)
+// 2. SERVIR ARCHIVOS ESTÁTICOS
 // Esto mapea la ruta de internet '/uploads' a tu carpeta física 'uploads'
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -100,21 +100,40 @@ app.get('/api/productos', async (req, res) => {
     }
 });
 
-// API POST: Restar Stock dinámico al procesar la compra
+// API POST: Procesar la compra con Yape, datos de envío y resta de stock dinámico
 app.post('/api/productos/comprar', async (req, res) => {
     try {
-        const { carrito } = req.body; // Cada item del carrito ahora debería incluir { nombre, cantidad }
+        const { carrito, cliente } = req.body;
 
         if (!carrito || carrito.length === 0) {
             return res.status(400).json({ error: "El carrito está vacío" });
         }
 
+        if (!cliente || !cliente.nombre || !cliente.direccion || !cliente.telefono) {
+            return res.status(400).json({ error: "Faltan datos del cliente o la dirección de envío" });
+        }
+
+        // Imprimir el pedido de manera clara y ordenada en los Logs de Render
+        console.log("=========================================");
+        console.log("🍇 NUEVO PEDIDO RECIBIDO (PAGO CON YAPE) 🍇");
+        console.log("=========================================");
+        console.log(`Cliente:      ${cliente.nombre}`);
+        console.log(`Teléfono:     ${cliente.telefono}`);
+        console.log(`Dirección:    ${cliente.direccion}`);
+        console.log(`Nº Operación: ${cliente.numOperacion || 'No proporcionado'}`);
+        console.log(`Envío Adic.:  S/. ${parseFloat(cliente.costoEnvio).toFixed(2)}`);
+        console.log(`Total Final:  S/. ${parseFloat(cliente.totalConEnvio).toFixed(2)}`);
+        console.log("-----------------------------------------");
+        console.log("Artículos comprados:");
+        carrito.forEach(item => {
+            console.log(` - ${item.nombre} (Cantidad: ${item.cantidad}) - Precio Unit: S/. ${item.precio}`);
+        });
+        console.log("=========================================");
+
+        // Restar el Stock correspondiente en la base de datos seleccionada
         if (mongoose.connection.readyState === 1) {
             for (let item of carrito) {
-                // Leemos item.cantidad. Si no viene, por defecto restamos 1.
                 const cantidadARestar = parseInt(item.cantidad) || 1;
-                
-                // Usamos -$inc con la cantidad elegida para restar correctamente
                 await Producto.updateOne({ nombre: item.nombre }, { $inc: { stock: -cantidadARestar } });
             }
         } else {
@@ -129,9 +148,15 @@ app.post('/api/productos/comprar', async (req, res) => {
             }
             fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datos, null, 2));
         }
-        res.json({ mensaje: "Stock actualizado con éxito" });
+
+        res.json({ 
+            mensaje: "¡Pedido registrado con éxito! Tu Yape está en proceso de verificación de envío.",
+            pedidoId: Date.now() 
+        });
+
     } catch (error) {
-        res.status(500).json({ error: "Error al actualizar inventario" });
+        console.error("Error al procesar compra:", error);
+        res.status(500).json({ error: "Error interno al procesar el pedido" });
     }
 });
 
