@@ -101,19 +101,23 @@
             });
         }
 
-        function agregarAlCarrito(nombre, precio) {
-            // Buscar el producto original para comprobar que aún tenga stock virtual antes de agregar
-            let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
-            
-            if (prodOriginal && prodOriginal.stock > 0) {
-                prodOriginal.stock -= 1; // Restamos temporalmente en la interfaz
-                carrito.push({ nombre, precio });
-                actualizarInterfazCarrito();
-                renderizarCatalogo(); // Re-dibujar tarjetas para actualizar el número de stock visual
-            } else {
-                alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
-            }
-        }
+        // Reemplaza tu función agregarAlCarrito por esta:
+function agregarAlCarrito(nombre, precio) {
+    // Buscamos el producto completo en nuestra lista local
+    let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
+
+    if (prodOriginal && prodOriginal.stock > 0) {
+        prodOriginal.stock -= 1; // Restamos temporalmente en la interfaz
+
+        // Guardamos TODO el objeto del producto en el carrito (incluyendo su _id)
+        carrito.push(prodOriginal); 
+
+        actualizarInterfazCarrito();
+        renderizarCatalogo(); 
+    } else {
+        alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
+    }
+}
 
         function actualizarInterfazCarrito() {
             const lista = document.getElementById('items-carrito-lista');
