@@ -8,7 +8,7 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
         body { background-color: #f4f6f9; padding: 20px; color: #333; }
         header { background: #73246c; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; }
-        .container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 300px 1fr; gap: 30px; }
+        .container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 320px 1fr; gap: 30px; }
         .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
         h3 { margin-bottom: 20px; border-bottom: 2px solid #73246c; padding-bottom: 5px; }
         .btn-principal { background: #22c55e; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
@@ -27,6 +27,14 @@
         .btn-comprar:hover { background: #5a1c54; }
         .btn-comprar:disabled { background: #ccc; cursor: not-allowed; }
         .item-carrito { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #ddd; }
+        
+        /* Estilos del formulario de envío */
+        .form-envio { margin-top: 20px; margin-bottom: 20px; border-top: 1px solid #eee; padding-top: 15px; }
+        .form-envio h4 { font-size: 14px; color: #73246c; margin-bottom: 12px; }
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #555; }
+        .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; }
+        .form-group input:focus { border-color: #73246c; }
     </style>
 </head>
 <body>
@@ -37,9 +45,32 @@
         <div class="box">
             <h3>🛒 Mi Carrito (<span id="cart-count">0</span>)</h3>
             <div id="items-carrito-lista"><p style="color:#888; font-size:13px;">El carrito está vacío.</p></div>
+            
             <div style="margin-top:15px; font-weight:bold; font-size:16px; display:flex; justify-content:space-between; margin-bottom: 15px;">
                 <span>Total:</span><span>S/. <span id="cart-total">0.00</span></span>
             </div>
+
+            <!-- Formulario interactivo para capturar los datos requeridos por server.js -->
+            <div class="form-envio">
+                <h4>📝 Datos para el Envío y Yape</h4>
+                <div class="form-group">
+                    <label>Nombre del Comprador:</label>
+                    <input type="text" id="cli-nombre" placeholder="Ej. Juan Pérez">
+                </div>
+                <div class="form-group">
+                    <label>Teléfono de Contacto:</label>
+                    <input type="text" id="cli-telefono" placeholder="Ej. 987654321">
+                </div>
+                <div class="form-group">
+                    <label>Dirección de Entrega:</label>
+                    <input type="text" id="cli-direccion" placeholder="Ej. Av. Larco 123, Miraflores">
+                </div>
+                <div class="form-group">
+                    <label>Nº Operación Yape (Opcional):</label>
+                    <input type="text" id="cli-yape" placeholder="Ej. 1827364">
+                </div>
+            </div>
+
             <button class="btn-principal" onclick="procesarPago()">Procesar Compra</button>
         </div>
 
@@ -61,7 +92,7 @@
                 const res = await fetch(API_URL);
                 listaProductosDB = await res.json();
                 renderizarCatalogo();
-            } catch (error) { document.getElementById('catalogo-productos').innerHTML = "Error."; }
+            } catch (error) { document.getElementById('catalogo-productos').innerHTML = "Error al conectar con la tienda."; }
         }
 
         function renderizarCatalogo() {
@@ -69,7 +100,7 @@
             contenedor.innerHTML = "";
 
             if(listaProductosDB.length === 0) {
-                contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1; text-align:center;'>No hay productos.</p>";
+                contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1; text-align:center;'>No hay productos disponibles.</p>";
                 return;
             }
 
@@ -101,23 +132,19 @@
             });
         }
 
-        // Reemplaza tu función agregarAlCarrito por esta:
-function agregarAlCarrito(nombre, precio) {
-    // Buscamos el producto completo en nuestra lista local
-    let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
-
-    if (prodOriginal && prodOriginal.stock > 0) {
-        prodOriginal.stock -= 1; // Restamos temporalmente en la interfaz
-
-        // Guardamos TODO el objeto del producto en el carrito (incluyendo su _id)
-        carrito.push(prodOriginal); 
-
-        actualizarInterfazCarrito();
-        renderizarCatalogo(); 
-    } else {
-        alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
-    }
-}
+        function agregarAlCarrito(nombre, precio) {
+            // Buscar el producto original para comprobar que aún tenga stock virtual antes de agregar
+            let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
+            
+            if (prodOriginal && prodOriginal.stock > 0) {
+                prodOriginal.stock -= 1; // Restamos temporalmente en la interfaz
+                carrito.push({ nombre, precio });
+                actualizarInterfazCarrito();
+                renderizarCatalogo(); // Re-dibujar tarjetas para actualizar el número de stock visual
+            } else {
+                alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
+            }
+        }
 
         function actualizarInterfazCarrito() {
             const lista = document.getElementById('items-carrito-lista');
@@ -139,48 +166,66 @@ function agregarAlCarrito(nombre, precio) {
             });
             totalSpan.innerText = total.toFixed(2);
         }
-        
+
         async function procesarPago() {
             if(carrito.length === 0) return alert("Agrega productos primero.");
-            
-            // 1. Preparar el carrito para que contenga el campo 'cantidad' requerido por el servidor
-            // Agrupamos los elementos repetidos o asumimos cantidad 1 por cada item
+
+            // 1. Extraer los datos del formulario
+            const nombre = document.getElementById('cli-nombre').value.trim();
+            const telefono = document.getElementById('cli-telefono').value.trim();
+            const direccion = document.getElementById('cli-direccion').value.trim();
+            const numYape = document.getElementById('cli-yape').value.trim();
+
+            // 2. Validaciones locales en el cliente
+            if (!nombre || !telefono || !direccion) {
+                return alert("⚠️ Por favor completa tu Nombre, Teléfono y Dirección de entrega.");
+            }
+
+            const totalCompra = carrito.reduce((sum, item) => sum + item.precio, 0);
+
+            // 3. Estructurar el objeto 'cliente' según espera tu backend en server.js
+            const datosCliente = {
+                nombre: nombre,
+                direccion: direccion,
+                telefono: telefono,
+                numOperacion: numYape || 'No proporcionado',
+                costoEnvio: 0.00,
+                totalConEnvio: totalCompra
+            };
+
+            // Estructurar el array 'carrito' con campo 'cantidad' para la resta de stock
             const carritoProcesado = carrito.map(item => ({
                 nombre: item.nombre,
                 precio: item.precio,
-                cantidad: 1 // Tu backend lee 'item.cantidad' para restar el stock
+                cantidad: 1
             }));
 
-            // 2. Definimos unos datos de cliente por defecto para cumplir con la validación del backend
-            // NOTA: Más adelante puedes crear un formulario HTML sencillo para capturar estos datos del usuario real.
-            const clienteSimulado = {
-                nombre: "Cliente Invitado",
-                direccion: "Calle Falsa 123, Lima",
-                telefono: "999888777",
-                numOperacion: "YAPE-123456", // Requerido en los logs de pago con Yape
-                costoEnvio: 0.00,
-                totalConEnvio: carrito.reduce((sum, item) => sum + item.precio, 0)
-            };
-
             try {
-                // Enviamos el objeto con la estructura exacta: { carrito, cliente }
+                // Enviar la petición POST con la estructura { carrito, cliente }
                 const res = await fetch('/api/productos/comprar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         carrito: carritoProcesado, 
-                        cliente: clienteSimulado 
+                        cliente: datosCliente 
                     })
                 });
 
                 if (res.ok) {
-                    alert("🛒 ¡Pedido registrado con éxito! Tu Yape está en proceso de verificación de envío.");
+                    alert(`🛒 ¡Muchas gracias ${nombre}! Tu pedido fue registrado con éxito. Verificaremos tu Yape para proceder con el envío.`);
+                    
+                    // Limpiar carrito, formulario e interfaz tras el éxito
                     carrito = [];
                     actualizarInterfazCarrito();
-                    obtenerProductosDelBackend(); // Recargar datos frescos de la BD para actualizar los stocks en la UI
+                    document.getElementById('cli-nombre').value = '';
+                    document.getElementById('cli-telefono').value = '';
+                    document.getElementById('cli-direccion').value = '';
+                    document.getElementById('cli-yape').value = '';
+                    
+                    obtenerProductosDelBackend(); // Recargar el stock fresco desde MongoDB
                 } else {
                     const errorData = await res.json().catch(() => ({}));
-                    const mensajeError = errorData.error || errorData.mensaje || "Error desconocido en el servidor.";
+                    const mensajeError = errorData.error || errorData.mensaje || "Error en el servidor.";
                     alert(`❌ No se pudo procesar la compra. Servidor respondió: "${mensajeError}" (Código: ${res.status})`);
                 }
             } catch (error) { 
@@ -188,7 +233,6 @@ function agregarAlCarrito(nombre, precio) {
                 alert("Error de conexión: No se pudo contactar con el servidor."); 
             }
         }
-        
     </script>
 </body>
 </html>
