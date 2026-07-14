@@ -144,7 +144,9 @@
                 const res = await fetch('/api/productos/comprar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ carrito })
+                    body: JSON.stringify({ carrito }) 
+                    // Nota: Si tu backend falla con esto, prueba cambiando la línea anterior por:
+                    // body: JSON.stringify(carrito)
                 });
 
                 if (res.ok) {
@@ -152,9 +154,18 @@
                     carrito = [];
                     actualizarInterfazCarrito();
                     obtenerProductosDelBackend(); // Recargar datos frescos de la BD
+                } else {
+                    // Si el servidor responde con un error (ej. 400 o 500), leemos el mensaje de error
+                    const errorData = await res.json().catch(() => ({}));
+                    const mensajeError = errorData.mensaje || errorData.error || "Error desconocido en el servidor.";
+                    alert(`❌ No se pudo procesar la compra. Servidor respondió: "${mensajeError}" (Código: ${res.status})`);
                 }
-            } catch (error) { alert("Error al procesar el pago."); }
+            } catch (error) { 
+                console.error("Error de red:", error);
+                alert("Error de conexión: No se pudo contactar con el servidor."); 
+            }
         }
+        
     </script>
 </body>
 </html>
