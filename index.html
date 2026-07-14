@@ -148,7 +148,10 @@ function agregarAlCarrito(nombre, precio) {
                 const res = await fetch('/api/productos/comprar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(carrito)
+                    // Envía solo los IDs y las cantidades si tu backend lo requiere así:
+                    body: JSON.stringify({
+                         productos: carrito.map(p => ({ productoId: p._id, cantidad: 1 }))
+                    })
                     // Nota: Si tu backend falla con esto, prueba cambiando la línea anterior por:
                     // body: JSON.stringify(carrito)
                 });
