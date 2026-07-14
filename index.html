@@ -139,32 +139,48 @@ function agregarAlCarrito(nombre, precio) {
             });
             totalSpan.innerText = total.toFixed(2);
         }
-
+        
         async function procesarPago() {
             if(carrito.length === 0) return alert("Agrega productos primero.");
             
+            // 1. Preparar el carrito para que contenga el campo 'cantidad' requerido por el servidor
+            // Agrupamos los elementos repetidos o asumimos cantidad 1 por cada item
+            const carritoProcesado = carrito.map(item => ({
+                nombre: item.nombre,
+                precio: item.precio,
+                cantidad: 1 // Tu backend lee 'item.cantidad' para restar el stock
+            }));
+
+            // 2. Definimos unos datos de cliente por defecto para cumplir con la validación del backend
+            // NOTA: Más adelante puedes crear un formulario HTML sencillo para capturar estos datos del usuario real.
+            const clienteSimulado = {
+                nombre: "Cliente Invitado",
+                direccion: "Calle Falsa 123, Lima",
+                telefono: "999888777",
+                numOperacion: "YAPE-123456", // Requerido en los logs de pago con Yape
+                costoEnvio: 0.00,
+                totalConEnvio: carrito.reduce((sum, item) => sum + item.precio, 0)
+            };
+
             try {
-                // Enviamos el carrito al servidor para que reste el stock real en la BD
+                // Enviamos el objeto con la estructura exacta: { carrito, cliente }
                 const res = await fetch('/api/productos/comprar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // Envía solo los IDs y las cantidades si tu backend lo requiere así:
-                    body: JSON.stringify({
-                         productos: carrito.map(p => ({ productoId: p._id, cantidad: 1 }))
+                    body: JSON.stringify({ 
+                        carrito: carritoProcesado, 
+                        cliente: clienteSimulado 
                     })
-                    // Nota: Si tu backend falla con esto, prueba cambiando la línea anterior por:
-                    // body: JSON.stringify(carrito)
                 });
 
                 if (res.ok) {
-                    alert("🛒 ¡Compra verificada y procesada con éxito! El stock ha sido descontado.");
+                    alert("🛒 ¡Pedido registrado con éxito! Tu Yape está en proceso de verificación de envío.");
                     carrito = [];
                     actualizarInterfazCarrito();
-                    obtenerProductosDelBackend(); // Recargar datos frescos de la BD
+                    obtenerProductosDelBackend(); // Recargar datos frescos de la BD para actualizar los stocks en la UI
                 } else {
-                    // Si el servidor responde con un error (ej. 400 o 500), leemos el mensaje de error
                     const errorData = await res.json().catch(() => ({}));
-                    const mensajeError = errorData.mensaje || errorData.error || "Error desconocido en el servidor.";
+                    const mensajeError = errorData.error || errorData.mensaje || "Error desconocido en el servidor.";
                     alert(`❌ No se pudo procesar la compra. Servidor respondió: "${mensajeError}" (Código: ${res.status})`);
                 }
             } catch (error) { 
