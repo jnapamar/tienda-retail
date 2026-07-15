@@ -31,14 +31,19 @@ mongoose.connect(MONGO_URI)
     });
 
 // Esquema de Productos (La imagen ahora almacena directamente la URL de internet como texto)
+
+    // Esquema de Productos actualizado
 const ProductoSchema = new mongoose.Schema({
+    codigo: String,      // Nuevo campo
+    vendedor: String,    // Nuevo campo
     nombre: String,
     precio: Number,
     categoria: String,
-    imagen: String, // Guardará la URL directa: ej. https://i.postimg.cc/...
+    imagen: String, 
     descripcion: String,
     stock: Number 
 });
+
 const Producto = mongoose.model('Producto', ProductoSchema);
 
 // --- TUS RUTAS (Todas unificadas bajo 'app') ---
