@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const multer = require('multer');
 
 // Usamos ÚNICAMENTE 'app' para evitar duplicados y conflictos
 const app = express();
@@ -12,27 +11,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 2. SERVIR ARCHIVOS ESTÁTICOS
-// Esto mapea la ruta de internet '/uploads' a tu carpeta física 'uploads'
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Si tu HTML, CSS y JS principales están sueltos en la raíz, esto los servirá en internet:
+// Servir la raíz del proyecto para renderizar tu index.html
 app.use(express.static(__dirname));
 
 // Configuración de Puertos para Render
 const PORT = process.env.PORT || 5000;
 const FILE_DB_PATH = path.join(__dirname, 'backup_productos.json');
 
-// Asegurar directorios mínimos en el servidor
+// Asegurar directorios mínimos en el servidor (solo JSON de contingencia)
 if (!fs.existsSync(FILE_DB_PATH)) fs.writeFileSync(FILE_DB_PATH, JSON.stringify([]));
-if (!fs.existsSync(path.join(__dirname, 'uploads'))) fs.mkdirSync(path.join(__dirname, 'uploads'));
-
-// Configuración de Multer para Imágenes
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => { cb(null, 'uploads/'); },
-    filename: (req, file, cb) => { cb(null, Date.now() + path.extname(file.originalname)); }
-});
-const upload = multer({ storage: storage });
 
 // Conexión limpia a MongoDB (Compatible con Atlas en producción y Local en tu PC)
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tienda_retail_db';
@@ -43,12 +30,12 @@ mongoose.connect(MONGO_URI)
         console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message);
     });
 
-// Esquema de Productos
+// Esquema de Productos (La imagen ahora almacena directamente la URL de internet como texto)
 const ProductoSchema = new mongoose.Schema({
     nombre: String,
     precio: Number,
     categoria: String,
-    imagen: String,
+    imagen: String, // Guardará la URL directa: ej. https://i.postimg.cc/...
     descripcion: String,
     stock: Number 
 });
@@ -56,17 +43,15 @@ const Producto = mongoose.model('Producto', ProductoSchema);
 
 // --- TUS RUTAS (Todas unificadas bajo 'app') ---
 
-// API POST: Recibir producto con Stock
-app.post('/api/productos', upload.single('imagen'), async (req, res) => {
+// API POST: Recibir producto con Stock (Usa JSON en lugar de Multer)
+app.post('/api/productos', async (req, res) => {
     try {
-        const rutaImagen = req.file ? `/uploads/${req.file.filename}` : '';
-        
         const datosProducto = {
             nombre: req.body.nombre,
             precio: parseFloat(req.body.precio),
             categoria: req.body.categoria,
             descripcion: req.body.descripcion,
-            imagen: rutaImagen,
+            imagen: req.body.imagen || '', // Captura la URL del texto del formulario
             stock: parseInt(req.body.stock) || 0
         };
 
@@ -121,7 +106,7 @@ app.post('/api/productos/comprar', async (req, res) => {
         console.log(`Teléfono:     ${cliente.telefono}`);
         console.log(`Dirección:    ${cliente.direccion}`);
         console.log(`Nº Operación: ${cliente.numOperacion || 'No proporcionado'}`);
-        console.log(`Envío Adic.:  S/. ${parseFloat(cliente.costoEnvio).toFixed(2)}`);
+        console.log(`Envío Adic.:  S/. ${parseFloat(cliente.costoEnvio || 0).toFixed(2)}`);
         console.log(`Total Final:  S/. ${parseFloat(cliente.totalConEnvio).toFixed(2)}`);
         console.log("-----------------------------------------");
         console.log("Artículos comprados:");
