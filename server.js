@@ -4,36 +4,36 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 
-// Usamos ÚNICAMENTE 'app' para evitar duplicados y conflictos
 const app = express();
 
-// 1. CONFIGURACIONES GENERALES (MIDDLEWARES)
+// 1. MIDDLEWARES
 app.use(cors());
 app.use(express.json());
-
-// Servir la raíz del proyecto para renderizar tu index.html
 app.use(express.static(__dirname));
 
-// Configuración de Puertos para Render
 const PORT = process.env.PORT || 5000;
 const FILE_DB_PATH = path.join(__dirname, 'backup_productos.json');
+const FILE_PEDIDOS_PATH = path.join(__dirname, 'backup_pedidos.json');
 
-// Asegurar directorios mínimos en el servidor (solo JSON de contingencia)
+// Asegurar archivos JSON de contingencia local
 if (!fs.existsSync(FILE_DB_PATH)) fs.writeFileSync(FILE_DB_PATH, JSON.stringify([]));
+if (!fs.existsSync(FILE_PEDIDOS_PATH)) fs.writeFileSync(FILE_PEDIDOS_PATH, JSON.stringify([]));
 
-// Conexión limpia a MongoDB (Compatible con Atlas en producción y Local en tu PC)
+// Conexión a MongoDB
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tienda_retail_db';
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Conectado con éxito a MongoDB'))
-    .catch((err) => {
-        console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message);
-    });
+    .catch((err) => console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message));
 
-// Esquema de Productos actualizado
+// ----------------------------------------------------
+// 2. ESQUEMAS DE BASE DE DATOS
+// ----------------------------------------------------
+
+// Esquema de Productos
 const ProductoSchema = new mongoose.Schema({
-    codigo: String,      // Código identificador (Ej. PROD-101)
-    vendedor: String,    // Vendedor asignado
+    codigo: String,
+    vendedor: String,
     nombre: String,
     precio: Number,
     categoria: String,
@@ -44,12 +44,36 @@ const ProductoSchema = new mongoose.Schema({
 
 const Producto = mongoose.model('Producto', ProductoSchema);
 
-// --- TUS RUTAS ---
+// NUEVO: Esquema de Pedidos / Ventas para Reportes
+const PedidoSchema = new mongoose.Schema({
+    fecha: { type: Date, default: Date.now },
+    cliente: {
+        nombre: String,
+        telefono: String,
+        direccion: String,
+        numOperacion: String,
+        costoEnvio: Number,
+        totalConEnvio: Number
+    },
+    items: [
+        {
+            nombre: String,
+            cantidad: Number,
+            precio: Number
+        }
+    ],
+    estado: { type: String, default: 'Pendiente' } // Pendiente, Entregado, Cancelado
+});
 
-// API POST: Recibir producto con Stock
+const Pedido = mongoose.model('Pedido', PedidoSchema);
+
+// ----------------------------------------------------
+// 3. RUTAS DE PRODUCTOS
+// ----------------------------------------------------
+
+// API POST: Crear Producto
 app.post('/api/productos', async (req, res) => {
     try {
-        // CORRECCIÓN: Se capturan explícitamente código y vendedor
         const datosProducto = {
             codigo: req.body.codigo || 'S/C',
             vendedor: req.body.vendedor || 'Sin asignación',
@@ -57,7 +81,7 @@ app.post('/api/productos', async (req, res) => {
             precio: parseFloat(req.body.precio),
             categoria: req.body.categoria,
             descripcion: req.body.descripcion,
-            imagen: req.body.imagen || '', // Captura la URL del texto del formulario
+            imagen: req.body.imagen || '',
             stock: parseInt(req.body.stock) || 0
         };
 
@@ -78,7 +102,7 @@ app.post('/api/productos', async (req, res) => {
     }
 });
 
-// API GET: Listar productos
+// API GET: Listar Productos
 app.get('/api/productos', async (req, res) => {
     try {
         if (mongoose.connection.readyState === 1) {
@@ -92,7 +116,30 @@ app.get('/api/productos', async (req, res) => {
     }
 });
 
-// API POST: Procesar la compra con Yape, datos de envío y resta de stock dinámico
+// API DELETE: Eliminar Producto
+app.delete('/api/productos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (mongoose.connection.readyState === 1) {
+            await Producto.findByIdAndDelete(id);
+            return res.json({ mensaje: "Producto eliminado de MongoDB con éxito" });
+        } else {
+            let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
+            const datosFiltrados = datos.filter(prod => prod.id !== Number(id) && prod._id !== id);
+            fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datosFiltrados, null, 2));
+            return res.json({ mensaje: "Producto eliminado de contingencia local" });
+        }
+    } catch (error) {
+        res.status(500).json({ error: "Error al eliminar el producto", detalle: error.message });
+    }
+});
+
+// ----------------------------------------------------
+// 4. RUTAS DE VENTAS Y COMPRAS (CON GUARDADO DE HISTORIAL)
+// ----------------------------------------------------
+
+// API POST: Procesar Compra y Guardar Registro de Venta
 app.post('/api/productos/comprar', async (req, res) => {
     try {
         const { carrito, cliente } = req.body;
@@ -105,46 +152,64 @@ app.post('/api/productos/comprar', async (req, res) => {
             return res.status(400).json({ error: "Faltan datos del cliente o la dirección de envío" });
         }
 
-        // Imprimir el pedido de manera clara y ordenada en los Logs de Render
-        console.log("=========================================");
-        console.log("🍇 NUEVO PEDIDO RECIBIDO (PAGO CON YAPE) 🍇");
-        console.log("=========================================");
-        console.log(`Cliente:      ${cliente.nombre}`);
-        console.log(`Teléfono:     ${cliente.telefono}`);
-        console.log(`Dirección:    ${cliente.direccion}`);
-        console.log(`Nº Operación: ${cliente.numOperacion || 'No proporcionado'}`);
-        console.log(`Envío Adic.:  S/. ${parseFloat(cliente.costoEnvio || 0).toFixed(2)}`);
-        console.log(`Total Final:  S/. ${parseFloat(cliente.totalConEnvio).toFixed(2)}`);
-        console.log("-----------------------------------------");
-        console.log("Artículos comprados:");
-        carrito.forEach(item => {
-            console.log(` - ${item.nombre} (Cantidad: ${item.cantidad}) - Precio Unit: S/. ${item.precio}`);
-        });
-        console.log("=========================================");
+        // Estructura del pedido a guardar
+        const datosPedido = {
+            fecha: new Date(),
+            cliente: {
+                nombre: cliente.nombre,
+                telefono: cliente.telefono,
+                direccion: cliente.direccion,
+                numOperacion: cliente.numOperacion || 'Sin número',
+                costoEnvio: parseFloat(cliente.costoEnvio || 0),
+                totalConEnvio: parseFloat(cliente.totalConEnvio)
+            },
+            items: carrito.map(item => ({
+                nombre: item.nombre,
+                cantidad: parseInt(item.cantidad) || 1,
+                precio: parseFloat(item.precio)
+            })),
+            estado: 'Pendiente'
+        };
 
-        // Restar el Stock correspondiente en la base de datos seleccionada
         if (mongoose.connection.readyState === 1) {
+            // 1. Guardar el pedido en MongoDB
+            const nuevoPedido = new Pedido(datosPedido);
+            await nuevoPedido.save();
+
+            // 2. Restar Stock
             for (let item of carrito) {
                 const cantidadARestar = parseInt(item.cantidad) || 1;
                 await Producto.updateOne({ nombre: item.nombre }, { $inc: { stock: -cantidadARestar } });
             }
+
+            return res.json({ 
+                mensaje: "¡Pedido registrado con éxito!",
+                pedidoId: nuevoPedido._id 
+            });
+
         } else {
-            let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
+            // Contingencia Local (JSON)
+            let pedidos = JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8'));
+            const nuevoPedidoLocal = { _id: Date.now().toString(), ...datosPedido };
+            pedidos.unshift(nuevoPedidoLocal);
+            fs.writeFileSync(FILE_PEDIDOS_PATH, JSON.stringify(pedidos, null, 2));
+
+            // Restar stock local
+            let datosProd = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             for (let item of carrito) {
                 const cantidadARestar = parseInt(item.cantidad) || 1;
-                let p = datos.find(prod => prod.nombre === item.nombre);
-                
+                let p = datosProd.find(prod => prod.nombre === item.nombre);
                 if (p && p.stock >= cantidadARestar) {
                     p.stock -= cantidadARestar;
                 }
             }
-            fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datos, null, 2));
-        }
+            fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datosProd, null, 2));
 
-        res.json({ 
-            mensaje: "¡Pedido registrado con éxito! Tu Yape está en proceso de verificación de envío.",
-            pedidoId: Date.now() 
-        });
+            return res.json({ 
+                mensaje: "¡Pedido registrado localmente!",
+                pedidoId: nuevoPedidoLocal._id 
+            });
+        }
 
     } catch (error) {
         console.error("Error al procesar compra:", error);
@@ -152,30 +217,61 @@ app.post('/api/productos/comprar', async (req, res) => {
     }
 });
 
-// API DELETE: Eliminar un producto (por ID o por Nombre)
-app.delete('/api/productos/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
+// ----------------------------------------------------
+// 5. NUEVAS RUTAS PARA REPORTES Y ADMINISTRACIÓN DE VENTAS
+// ----------------------------------------------------
 
+// API GET: Obtener todas las ventas/pedidos realizados
+app.get('/api/ventas', async (req, res) => {
+    try {
         if (mongoose.connection.readyState === 1) {
-            // Si está conectado a MongoDB, borramos por el _id único
-            await Producto.findByIdAndDelete(id);
-            return res.json({ mensaje: "Producto eliminado de MongoDB con éxito" });
+            const ventas = await Pedido.find().sort({ fecha: -1 });
+            return res.json(ventas);
         } else {
-            // Si está en modo contingencia (JSON), filtramos el archivo
-            let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
-            
-            const datosFiltrados = datos.filter(prod => prod.id !== Number(id) && prod._id !== id && prod.id !== id);
-            
-            fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datosFiltrados, null, 2));
-            return res.json({ mensaje: "Producto eliminado de contingencia local" });
+            return res.json(JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8')));
         }
     } catch (error) {
-        res.status(500).json({ error: "Error al eliminar el producto", detalle: error.message });
+        res.status(500).json({ error: "Error al obtener reporte de ventas" });
     }
 });
 
-// Encendemos el servidor usando 'app'
+// API GET: Métricas / Resumen de ventas para Reporte Ejecutivo
+app.get('/api/ventas/reporte', async (req, res) => {
+    try {
+        let ventas = [];
+        if (mongoose.connection.readyState === 1) {
+            ventas = await Pedido.find();
+        } else {
+            ventas = JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8'));
+        }
+
+        // Cálculos de métricas
+        const totalVentas = ventas.length;
+        const ingresosTotales = ventas.reduce((acc, v) => acc + (v.cliente.totalConEnvio || 0), 0);
+        
+        // Conteo de artículos más vendidos
+        const productosVendidos = {};
+        ventas.forEach(v => {
+            v.items.forEach(item => {
+                productosVendidos[item.nombre] = (productosVendidos[item.nombre] || 0) + item.cantidad;
+            });
+        });
+
+        res.json({
+            resumen: {
+                totalVentas,
+                ingresosTotales: ingresosTotales.toFixed(2),
+                promedioPorVenta: totalVentas > 0 ? (ingresosTotales / totalVentas).toFixed(2) : 0
+            },
+            topProductos: productosVendidos
+        });
+
+    } catch (error) {
+        res.status(500).json({ error: "Error al generar el reporte" });
+    }
+});
+
+// Iniciar Servidor
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor corriendo con éxito en el puerto ${PORT}`);
 });
