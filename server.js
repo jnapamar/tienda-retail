@@ -30,12 +30,10 @@ mongoose.connect(MONGO_URI)
         console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message);
     });
 
-// Esquema de Productos (La imagen ahora almacena directamente la URL de internet como texto)
-
-    // Esquema de Productos actualizado
+// Esquema de Productos actualizado
 const ProductoSchema = new mongoose.Schema({
-    codigo: String,      // Nuevo campo
-    vendedor: String,    // Nuevo campo
+    codigo: String,      // Código identificador (Ej. PROD-101)
+    vendedor: String,    // Vendedor asignado
     nombre: String,
     precio: Number,
     categoria: String,
@@ -46,12 +44,15 @@ const ProductoSchema = new mongoose.Schema({
 
 const Producto = mongoose.model('Producto', ProductoSchema);
 
-// --- TUS RUTAS (Todas unificadas bajo 'app') ---
+// --- TUS RUTAS ---
 
-// API POST: Recibir producto con Stock (Usa JSON en lugar de Multer)
+// API POST: Recibir producto con Stock
 app.post('/api/productos', async (req, res) => {
     try {
+        // CORRECCIÓN: Se capturan explícitamente código y vendedor
         const datosProducto = {
+            codigo: req.body.codigo || 'S/C',
+            vendedor: req.body.vendedor || 'Sin asignación',
             nombre: req.body.nombre,
             precio: parseFloat(req.body.precio),
             categoria: req.body.categoria,
@@ -66,12 +67,13 @@ app.post('/api/productos', async (req, res) => {
             return res.status(201).json({ mensaje: "Guardado en MongoDB", producto: nuevo });
         } else {
             const datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
-            const nuevoItem = { id: Date.now(), ...datosProducto };
+            const nuevoItem = { _id: Date.now().toString(), ...datosProducto };
             datos.unshift(nuevoItem);
             fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datos, null, 2));
             return res.status(201).json({ mensaje: "Guardado en contingencia Local", producto: nuevoItem });
         }
     } catch (error) {
+        console.error("Error al guardar producto:", error);
         res.status(400).json({ error: "Error al guardar el producto" });
     }
 });
@@ -163,8 +165,7 @@ app.delete('/api/productos/:id', async (req, res) => {
             // Si está en modo contingencia (JSON), filtramos el archivo
             let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             
-            // Buscamos si el ID coincide (convertido a número ya que Date.now() es numérico)
-            const datosFiltrados = datos.filter(prod => prod.id !== Number(id) && prod._id !== id);
+            const datosFiltrados = datos.filter(prod => prod.id !== Number(id) && prod._id !== id && prod.id !== id);
             
             fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datosFiltrados, null, 2));
             return res.json({ mensaje: "Producto eliminado de contingencia local" });
@@ -175,7 +176,6 @@ app.delete('/api/productos/:id', async (req, res) => {
 });
 
 // Encendemos el servidor usando 'app'
-// Escuchamos en el puerto de Render y aceptamos conexiones externas ('0.0.0.0')
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor corriendo con éxito en el puerto ${PORT}`);
 });
