@@ -1,0 +1,157 @@
+<!-- CONTENEDOR PRINCIPAL DE PEDIDOS -->
+<div class="box" style="max-width: 900px; margin: 30px auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>📦 Registro de Pedidos Recibidos</h3>
+        <button onclick="cargarPedidos()" style="width: auto; padding: 8px 15px; background: #007bff;">🔄 Actualizar Pedidos</button>
+    </div>
+
+    <!-- TARJETAS CON LA LISTA DE PEDIDOS -->
+    <div id="contenedorPedidos">
+        <p style="color: #888; text-align: center;">Cargando lista de pedidos...</p>
+    </div>
+</div>
+
+<style>
+    .card-pedido {
+        background: #ffffff;
+        border: 1px solid #e1e4e8;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+    .pedido-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid #f0f2f5;
+        padding-bottom: 12px;
+        margin-bottom: 15px;
+    }
+    .badge-estado {
+        background: #fff3cd;
+        color: #856404;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 10px;
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        margin-bottom: 15px;
+    }
+    .tabla-items {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        margin-top: 10px;
+    }
+    .tabla-items th {
+        background: #f1f3f5;
+        text-align: left;
+        padding: 8px;
+        color: #495057;
+    }
+    .tabla-items td {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+    }
+    .total-pedido {
+        text-align: right;
+        margin-top: 15px;
+        font-size: 16px;
+        font-weight: bold;
+        color: #28a745;
+    }
+</style>
+
+<script>
+    document.addEventListener("DOMContentLoaded", cargarPedidos);
+
+    async function cargarPedidos() {
+        const contenedor = document.getElementById('contenedorPedidos');
+        
+        try {
+            // Reemplaza esta URL por tu endpoint real si es diferente (ej. /api/pedidos)
+            const res = await fetch('/api/pedidos'); 
+            const pedidos = await res.json();
+
+            if (!pedidos || pedidos.length === 0) {
+                contenedor.innerHTML = "<p style='color: #888; text-align: center; padding: 20px;'>No hay pedidos registrados hasta el momento.</p>";
+                return;
+            }
+
+            contenedor.innerHTML = "";
+
+            pedidos.forEach((p, index) => {
+                // Formatear Fecha
+                const fechaObj = new Date(p.fecha);
+                const fechaFormateada = fechaObj.toLocaleString('es-PE', { 
+                    dateStyle: 'medium', 
+                    timeStyle: 'short' 
+                });
+
+                // Renderizar tabla de ítems del pedido
+                let itemsHTML = '';
+                p.items.forEach(item => {
+                    const subtotal = item.precio * item.cantidad;
+                    itemsHTML += `
+                        <tr>
+                            <td>${item.nombre}</td>
+                            <td style="text-align: center;">${item.cantidad}</td>
+                            <td style="text-align: right;">S/. ${item.precio.toLocaleString('es-PE')}</td>
+                            <td style="text-align: right; font-weight: bold;">S/. ${subtotal.toLocaleString('es-PE')}</td>
+                        </tr>
+                    `;
+                });
+
+                // Construcción de la tarjeta limpia
+                contenedor.innerHTML += `
+                    <div class="card-pedido">
+                        <div class="pedido-header">
+                            <div>
+                                <strong style="font-size: 16px;">Pedido #${pedidos.length - index}</strong>
+                                <span style="font-size: 12px; color: #666; margin-left: 10px;">📅 ${fechaFormateada}</span>
+                            </div>
+                            <span class="badge-estado">${p.estado || 'Pendiente'}</span>
+                        </div>
+
+                        <div class="info-grid">
+                            <div><strong>Cliente:</strong> ${p.cliente.nombre}</div>
+                            <div><strong>Teléfono:</strong> ${p.cliente.telefono}</div>
+                            <div><strong>Dirección:</strong> ${p.cliente.direccion}</div>
+                            <div><strong>N° Operación:</strong> ${p.cliente.numOperacion}</div>
+                        </div>
+
+                        <table class="tabla-items">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th style="text-align: center;">Cant.</th>
+                                    <th style="text-align: right;">P. Unit.</th>
+                                    <th style="text-align: right;">Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${itemsHTML}
+                            </tbody>
+                        </table>
+
+                        <div class="total-pedido">
+                            Total a Cobrar: S/. ${p.cliente.totalConEnvio.toLocaleString('es-PE')}
+                        </div>
+                    </div>
+                `;
+            });
+
+        } catch (error) {
+            contenedor.innerHTML = "<p style='color: red; text-align: center;'>Error al cargar los pedidos desde el servidor.</p>";
+        }
+    }
+</script>
