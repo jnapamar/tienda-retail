@@ -16,7 +16,7 @@
         button { background: #222; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
         button:hover { background: #444; }
 
-        /* Estilos para la lista de productos descontinuados */
+        /* Estilos para la lista de productos */
         .lista-productos { max-width: 600px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .producto-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; gap: 10px; }
         .producto-info { display: flex; align-items: center; gap: 15px; }
@@ -31,11 +31,10 @@
 
     <header><h1>🛠️ PANEL DE CONTROL: ADMINISTRADOR</h1></header>
 
-    <!-- FORMULARIO PARA AGREGAR -->
+    <!-- FORMULARIO PARA AGREGAR PRODUCTO -->
     <div class="box">
         <h3>Subir Nuevo Producto al Catálogo</h3>
         <form id="formProducto" onsubmit="enviarAlBackend(event)">
-            <!-- NUEVOS CAMPOS: CÓDIGO Y VENDEDOR -->
             <div class="form-group" style="display: flex; gap: 15px;">
                 <div style="flex: 1;">
                     <label>Código del Producto</label>
@@ -53,6 +52,7 @@
                 <div style="flex: 1;"><label>Precio (S/.)</label><input type="number" step="0.01" id="precio" required></div>
                 <div style="flex: 1;"><label>Stock Inicial (Unidades)</label><input type="number" id="stock" min="1" required placeholder="Ej. 10"></div>
             </div>
+            
             <div class="form-group">
                 <label>Categoría</label>
                 <select id="categoria">
@@ -62,9 +62,9 @@
                 </select>
             </div>
             
-            <!-- CAMBIO A ENTRADA DE ARCHIVO DESDE LA PC -->
+            <!-- SELECCIÓN DE ARCHIVO DE IMAGEN DESDE PC -->
             <div class="form-group">
-                <label>Imagen del Producto (Subir desde PC)</label>
+                <label>Imagen del Producto (Subir archivo de la PC)</label>
                 <input type="file" id="imagenFile" accept="image/*" required>
             </div>
 
@@ -73,14 +73,13 @@
         </form>
     </div>
 
-    <!-- SECCIÓN: LISTA PARA ELIMINAR ITEMS DESCONTINUADOS -->
+    <!-- LISTA DE PRODUCTOS PUBLICADOS -->
     <div class="lista-productos">
         <h3>Gestionar Catálogo Actual</h3>
         <div id="contenedorProductos">Cargando productos del servidor...</div>
     </div>
 
     <script>
-        // Al cargar la página, traemos los productos existentes automáticamente
         document.addEventListener("DOMContentLoaded", cargarProductos);
 
         // 1. CARGAR Y MOSTRAR PRODUCTOS
@@ -90,19 +89,19 @@
                 const productos = await res.json();
                 const contenedor = document.getElementById('contenedorProductos');
 
-                if (productos.length === 0) {
+                if (!productos || productos.length === 0) {
                     contenedor.innerHTML = "<p style='color: #888; font-size: 14px;'>No hay productos en el catálogo.</p>";
                     return;
                 }
 
-                contenedor.innerHTML = ""; // Limpiamos el texto de carga
+                contenedor.innerHTML = "";
                 
                 productos.forEach(prod => {
-                    const idUnico = prod._id || prod.id; // Compatible con MongoDB (_id) y JSON (id)
+                    const idUnico = prod._id || prod.id;
                     contenedor.innerHTML += `
                         <div class="producto-item">
                             <div class="producto-info">
-                                <img src="${prod.imagen || 'https://via.placeholder.com/50'}" alt="${prod.nombre}">
+                                <img src="${prod.imagen || 'https://via.placeholder.com/50'}" onerror="this.src='https://via.placeholder.com/50?text=Sin+Img'" alt="${prod.nombre}">
                                 <div class="producto-detalles">
                                     <h4>${prod.nombre} <span style="color: #666; font-size: 11px;">(${prod.codigo || 'S/C'})</span></h4>
                                     <p>Vendedor: ${prod.vendedor || 'No asignado'}</p>
@@ -118,22 +117,22 @@
             }
         }
 
-        // 2. ENVIAR NUEVO PRODUCTO (POST - Procesando imagen desde PC)
+        // 2. ENVIAR NUEVO PRODUCTO
         async function enviarAlBackend(e) {
             e.preventDefault();
 
             const btn = document.getElementById('btnGuardar');
-            btn.innerText = "Procesando y guardando...";
+            btn.innerText = "Optimizando imagen y publicando...";
             btn.disabled = true;
 
             const inputImagen = document.getElementById('imagenFile');
             const archivoImagen = inputImagen.files[0];
             let imagenBase64 = '';
 
-            // Convertimos la imagen de la PC a Base64 si existe un archivo
             if (archivoImagen) {
                 try {
-                    imagenBase64 = await convertirArchivoABase64(archivoImagen);
+                    // Redimensiona y optimiza la imagen a un peso ideal antes de enviarla
+                    imagenBase64 = await optimizarYConvertirImagen(archivoImagen);
                 } catch (err) {
                     alert("❌ Error al procesar la imagen seleccionada.");
                     btn.innerText = "Publicar en la Tienda";
@@ -150,46 +149,68 @@
                 stock: parseInt(document.getElementById('stock').value),
                 categoria: document.getElementById('categoria').value,
                 descripcion: document.getElementById('descripcion').value,
-                imagen: imagenBase64 // Enviamos la imagen convertida en texto Base64
+                imagen: imagenBase64
             };
 
             try {
                 const res = await fetch('/api/productos', { 
                     method: 'POST', 
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(nuevoProducto)
                 });
                 
-                if(res.ok) {
-                    alert("✅ Producto con imagen guardados con éxito en la tienda.");
+                if (res.ok) {
+                    alert("✅ Producto con imagen optimizada publicado con éxito.");
                     document.getElementById('formProducto').reset();
-                    cargarProductos(); // Recargamos la lista abajo para ver el nuevo item
+                    cargarProductos();
                 } else {
-                    alert("❌ Error al guardar en el servidor.");
+                    alert("❌ Error al guardar en el servidor. Asegúrate de haber actualizado el límite en server.js.");
                 }
             } catch (error) { 
-                alert("Error de conexión al subir."); 
+                alert("Error de conexión al subir el producto."); 
             } finally {
                 btn.innerText = "Publicar en la Tienda";
                 btn.disabled = false;
             }
         }
 
-        // FUNCIÓN AUXILIAR: Convierte un archivo local de la PC a formato Base64 (Texto)
-        function convertirArchivoABase64(archivo) {
+        // FUNCIÓN AUXILIAR: Redimensiona imágenes pesadas de la PC a máx 800px para que carguen rápido
+        function optimizarYConvertirImagen(archivo) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(archivo);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 800; // Ancho máximo
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > MAX_WIDTH) {
+                            height = Math.round((height * MAX_WIDTH) / width);
+                            width = MAX_WIDTH;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Comprime la imagen a JPEG con 70% de calidad
+                        resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+                    };
+                    img.onerror = (err) => reject(err);
+                };
+                reader.onerror = (err) => reject(err);
             });
         }
 
-        // 3. ELIMINAR PRODUCTO DESCONTINUADO (DELETE)
+        // 3. ELIMINAR PRODUCTO
         async function eliminarProducto(id) {
-            if (!confirm("⚠️ ¿Estás completamente seguro de eliminar este producto descontinuado?")) return;
+            if (!confirm("⚠️ ¿Estás seguro de eliminar este producto?")) return;
 
             try {
                 const res = await fetch(`/api/productos/${id}`, { method: 'DELETE' });
@@ -197,7 +218,7 @@
                 
                 if (res.ok) {
                     alert("🗑️ " + resultado.mensaje);
-                    cargarProductos(); // Volvemos a listar para que desaparezca en vivo
+                    cargarProductos();
                 } else {
                     alert("No se pudo eliminar: " + resultado.error);
                 }
