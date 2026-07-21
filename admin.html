@@ -61,13 +61,15 @@
                     <option value="Servicios">Servicios</option>
                 </select>
             </div>
-            <!-- CAMBIO: ENLACE DE IMAGEN EN LUGAR DE ARCHIVO LOCAL -->
+            
+            <!-- CAMBIO A ENTRADA DE ARCHIVO DESDE LA PC -->
             <div class="form-group">
-                <label>Enlace de la Imagen (URL de Internet)</label>
-                <input type="url" id="imagenUrl" required placeholder="Ej. https://i.postimg.cc/image.jpg">
+                <label>Imagen del Producto (Subir desde PC)</label>
+                <input type="file" id="imagenFile" accept="image/*" required>
             </div>
+
             <div class="form-group"><label>Descripción / Detalles</label><textarea id="descripcion" rows="3" required></textarea></div>
-            <button type="submit">Publicar en la Tienda</button>
+            <button type="submit" id="btnGuardar">Publicar en la Tienda</button>
         </form>
     </div>
 
@@ -116,9 +118,29 @@
             }
         }
 
-        // 2. ENVIAR NUEVO PRODUCTO (POST - JSON limpio)
+        // 2. ENVIAR NUEVO PRODUCTO (POST - Procesando imagen desde PC)
         async function enviarAlBackend(e) {
             e.preventDefault();
+
+            const btn = document.getElementById('btnGuardar');
+            btn.innerText = "Procesando y guardando...";
+            btn.disabled = true;
+
+            const inputImagen = document.getElementById('imagenFile');
+            const archivoImagen = inputImagen.files[0];
+            let imagenBase64 = '';
+
+            // Convertimos la imagen de la PC a Base64 si existe un archivo
+            if (archivoImagen) {
+                try {
+                    imagenBase64 = await convertirArchivoABase64(archivoImagen);
+                } catch (err) {
+                    alert("❌ Error al procesar la imagen seleccionada.");
+                    btn.innerText = "Publicar en la Tienda";
+                    btn.disabled = false;
+                    return;
+                }
+            }
             
             const nuevoProducto = {
                 codigo: document.getElementById('codigo').value,
@@ -128,7 +150,7 @@
                 stock: parseInt(document.getElementById('stock').value),
                 categoria: document.getElementById('categoria').value,
                 descripcion: document.getElementById('descripcion').value,
-                imagen: document.getElementById('imagenUrl').value // Captura el texto de la URL
+                imagen: imagenBase64 // Enviamos la imagen convertida en texto Base64
             };
 
             try {
@@ -141,15 +163,28 @@
                 });
                 
                 if(res.ok) {
-                    alert("✅ Producto publicado con stock inicial");
+                    alert("✅ Producto con imagen guardados con éxito en la tienda.");
                     document.getElementById('formProducto').reset();
-                    cargarProductos(); // <-- Recargamos la lista abajo para ver el nuevo item
+                    cargarProductos(); // Recargamos la lista abajo para ver el nuevo item
                 } else {
                     alert("❌ Error al guardar en el servidor.");
                 }
             } catch (error) { 
                 alert("Error de conexión al subir."); 
+            } finally {
+                btn.innerText = "Publicar en la Tienda";
+                btn.disabled = false;
             }
+        }
+
+        // FUNCIÓN AUXILIAR: Convierte un archivo local de la PC a formato Base64 (Texto)
+        function convertirArchivoABase64(archivo) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(archivo);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
         }
 
         // 3. ELIMINAR PRODUCTO DESCONTINUADO (DELETE)
@@ -162,7 +197,7 @@
                 
                 if (res.ok) {
                     alert("🗑️ " + resultado.mensaje);
-                    cargarProductos(); // <-- Volvemos a listar para que desaparezca en vivo
+                    cargarProductos(); // Volvemos a listar para que desaparezca en vivo
                 } else {
                     alert("No se pudo eliminar: " + resultado.error);
                 }
