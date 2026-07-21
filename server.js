@@ -8,7 +8,7 @@ const app = express();
 
 // 1. MIDDLEWARES
 app.use(cors());
-// Aumentamos el límite de tamaño para recibir imágenes Base64 grandes desde el PC
+// Límite de tamaño ampliado para recibir imágenes Base64 grandes desde el cliente
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(__dirname));
@@ -46,7 +46,7 @@ const ProductoSchema = new mongoose.Schema({
 
 const Producto = mongoose.model('Producto', ProductoSchema);
 
-// NUEVO: Esquema de Pedidos / Ventas para Reportes
+// Esquema de Pedidos / Ventas para Reportes
 const PedidoSchema = new mongoose.Schema({
     fecha: { type: Date, default: Date.now },
     cliente: {
@@ -70,7 +70,21 @@ const PedidoSchema = new mongoose.Schema({
 const Pedido = mongoose.model('Pedido', PedidoSchema);
 
 // ----------------------------------------------------
-// 3. RUTAS DE PRODUCTOS
+// 3. RUTAS DE NAVEGACIÓN Y VISTAS HTML
+// ----------------------------------------------------
+
+// Ruta para visualizar el Gestor de Pedidos / Reporte
+app.get('/pedidos', (req, res) => {
+    res.sendFile(path.join(__dirname, 'pedidos.html'));
+});
+
+// Ruta para visualizar el Panel de Administrador
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// ----------------------------------------------------
+// 4. RUTAS DE API PRODUCTOS
 // ----------------------------------------------------
 
 // API POST: Crear Producto
@@ -138,7 +152,7 @@ app.delete('/api/productos/:id', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 4. RUTAS DE VENTAS Y COMPRAS (CON GUARDADO DE HISTORIAL)
+// 5. RUTAS DE VENTAS Y COMPRAS
 // ----------------------------------------------------
 
 // API POST: Procesar Compra y Guardar Registro de Venta
@@ -154,7 +168,6 @@ app.post('/api/productos/comprar', async (req, res) => {
             return res.status(400).json({ error: "Faltan datos del cliente o la dirección de envío" });
         }
 
-        // Estructura del pedido a guardar
         const datosPedido = {
             fecha: new Date(),
             cliente: {
@@ -220,56 +233,57 @@ app.post('/api/productos/comprar', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 5. NUEVAS RUTAS PARA REPORTES Y ADMINISTRACIÓN DE VENTAS
+// 6. RUTAS DE REPORTES Y GESTIÓN DE PEDIDOS
 // ----------------------------------------------------
 
-// API GET: Obtener todas las ventas/pedidos realizados
-app.get('/api/ventas', async (req, res) => {
+// Función unificada para obtener la lista de pedidos
+async function obtenerListaPedidos() {
+    if (mongoose.connection.readyState === 1) {
+        return await Pedido.find().sort({ fecha: -1 });
+    } else {
+        return JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8'));
+    }
+}
+
+// API GET: Obtener ventas/pedidos (soporta ambas rutas /api/ventas y /api/pedidos)
+app.get(['/api/ventas', '/api/pedidos'], async (req, res) => {
     try {
-        if (mongoose.connection.readyState === 1) {
-            const ventas = await Pedido.find().sort({ fecha: -1 });
-            return res.json(ventas);
-        } else {
-            return res.json(JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8')));
-        }
+        const ventas = await obtenerListaPedidos();
+        return res.json(ventas);
     } catch (error) {
-        res.status(500).json({ error: "Error al obtener reporte de ventas" });
+        res.status(500).json({ error: "Error al obtener el historial de pedidos" });
     }
 });
 
-// API GET: Métricas / Resumen de ventas para Reporte Ejecutivo
+// API GET: Métricas y Resumen Ejecutivo
 app.get('/api/ventas/reporte', async (req, res) => {
     try {
-        let ventas = [];
-        if (mongoose.connection.readyState === 1) {
-            ventas = await Pedido.find();
-        } else {
-            ventas = JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8'));
-        }
+        const ventas = await obtenerListaPedidos();
 
-        // Cálculos de métricas
         const totalVentas = ventas.length;
-        const ingresosTotales = ventas.reduce((acc, v) => acc + (v.cliente.totalConEnvio || 0), 0);
+        const ingresosTotales = ventas.reduce((acc, v) => acc + ((v.cliente && v.cliente.totalConEnvio) || 0), 0);
         
-        // Conteo de artículos más vendidos
+        // Conteo de productos más vendidos
         const productosVendidos = {};
         ventas.forEach(v => {
-            v.items.forEach(item => {
-                productosVendidos[item.nombre] = (productosVendidos[item.nombre] || 0) + item.cantidad;
-            });
+            if (v.items && Array.isArray(v.items)) {
+                v.items.forEach(item => {
+                    productosVendidos[item.nombre] = (productosVendidos[item.nombre] || 0) + (item.cantidad || 1);
+                });
+            }
         });
 
         res.json({
             resumen: {
                 totalVentas,
                 ingresosTotales: ingresosTotales.toFixed(2),
-                promedioPorVenta: totalVentas > 0 ? (ingresosTotales / totalVentas).toFixed(2) : 0
+                promedioPorVenta: totalVentas > 0 ? (ingresosTotales / totalVentas).toFixed(2) : '0.00'
             },
             topProductos: productosVendidos
         });
 
     } catch (error) {
-        res.status(500).json({ error: "Error al generar el reporte" });
+        res.status(500).json({ error: "Error al generar el reporte de métricas" });
     }
 });
 
