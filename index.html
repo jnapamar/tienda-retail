@@ -7,13 +7,31 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
         body { background-color: #f4f6f9; padding: 20px; color: #333; }
-        header { background: #73246c; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; }
-        .container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 320px 1fr; gap: 30px; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
-        h3 { margin-bottom: 20px; border-bottom: 2px solid #73246c; padding-bottom: 5px; }
+        header { background: #73246c; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 25px; text-align: center; }
+        header h1 { font-size: 24px; }
+        
+        /* Layout Grid principal */
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            display: grid; 
+            grid-template-columns: 320px 1fr; 
+            gap: 25px; 
+        }
+        
+        .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
+        h3 { margin-bottom: 15px; border-bottom: 2px solid #73246c; padding-bottom: 5px; font-size: 18px; }
+        
         .btn-principal { background: #22c55e; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
         .btn-principal:hover { background: #16a34a; }
-        .catalogo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        
+        /* Grid de catálogo */
+        .catalogo-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); 
+            gap: 20px; 
+        }
+        
         .product-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         .product-img { width: 100%; height: 180px; object-fit: cover; background: #eee; }
         .product-body { padding: 15px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; }
@@ -27,18 +45,55 @@
         .btn-comprar:hover { background: #5a1c54; }
         .btn-comprar:disabled { background: #ccc; cursor: not-allowed; }
         
-        /* Estilos del ítem del carrito y botón eliminar */
+        /* Ítem del carrito y botón eliminar */
         .item-carrito { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #ddd; }
         .btn-eliminar { background: transparent; border: none; color: #ef4444; font-weight: bold; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; line-height: 1; }
         .btn-eliminar:hover { background: #fee2e2; }
 
-        /* Estilos del formulario de envío */
+        /* Formulario de envío */
         .form-envio { margin-top: 20px; margin-bottom: 20px; border-top: 1px solid #eee; padding-top: 15px; }
         .form-envio h4 { font-size: 14px; color: #73246c; margin-bottom: 12px; }
         .form-group { margin-bottom: 10px; }
         .form-group label { display: block; font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #555; }
         .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; }
         .form-group input:focus { border-color: #73246c; }
+
+        /* =======================================================
+           REGLAS RESPONSIVE (MEDIA QUERIES)
+           ======================================================= */
+        
+        /* En pantallas medianas y pequeñas (tablets y celulares, < 850px) */
+        @media (max-width: 850px) {
+            body { padding: 10px; }
+            
+            /* Cambiar el layout de 2 columnas a 1 sola columna */
+            .container { 
+                grid-template-columns: 1fr; 
+                gap: 15px; 
+            }
+
+            /* Cambiar orden en móviles: los productos arriba y el carrito abajo */
+            .box:nth-child(1) {
+                order: 2; /* Carrito pasa abajo */
+            }
+            .box:nth-child(2) {
+                order: 1; /* Productos pasan arriba */
+            }
+
+            .box { padding: 15px; }
+        }
+
+        /* En pantallas muy pequeñas (celulares compactos, < 480px) */
+        @media (max-width: 480px) {
+            header h1 { font-size: 18px; }
+            
+            /* En teléfonos 1 sola columna para las tarjetas */
+            .catalogo-grid { 
+                grid-template-columns: 1fr; 
+            }
+            
+            .product-img { height: 160px; }
+        }
     </style>
 </head>
 <body>
@@ -46,6 +101,7 @@
     <header><h1>🛍️ MINI RIPLEY - TIENDA</h1></header>
 
     <div class="container">
+        <!-- Columna 1: Carrito de compras -->
         <div class="box">
             <h3>🛒 Mi Carrito (<span id="cart-count">0</span>)</h3>
             <div id="items-carrito-lista"><p style="color:#888; font-size:13px;">El carrito está vacío.</p></div>
@@ -54,7 +110,7 @@
                 <span>Total:</span><span>S/. <span id="cart-total">0.00</span></span>
             </div>
 
-            <!-- Formulario interactivo para capturar los datos del cliente -->
+            <!-- Formulario de envío -->
             <div class="form-envio">
                 <h4>📝 Datos para el Envío y Yape</h4>
                 <div class="form-group">
@@ -78,6 +134,7 @@
             <button class="btn-principal" onclick="procesarPago()">Procesar Compra</button>
         </div>
 
+        <!-- Columna 2: Catálogo de Productos -->
         <div class="box">
             <h3>Productos Disponibles</h3>
             <div id="catalogo-productos" class="catalogo-grid"></div>
@@ -86,7 +143,7 @@
 
     <script>
         const API_URL = '/api/productos';
-        let listaProductosDB = []; // Copia local de la BD
+        let listaProductosDB = [];
         let carrito = [];
 
         window.onload = obtenerProductosDelBackend;
@@ -141,29 +198,24 @@
             let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
             
             if (prodOriginal && prodOriginal.stock > 0) {
-                prodOriginal.stock -= 1; // Restamos temporalmente en la vista
+                prodOriginal.stock -= 1;
                 carrito.push({ nombre, precio });
                 actualizarInterfazCarrito();
-                renderizarCatalogo(); // Re-dibujar tarjetas para actualizar stock visual
+                renderizarCatalogo();
             } else {
                 alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
             }
         }
 
-        // NUEVA FUNCIÓN: Elimina un producto específico del carrito por su índice
         function eliminarDelCarrito(index) {
             const itemEliminado = carrito[index];
             
-            // Devolver el stock al producto en la copia local
             let prodOriginal = listaProductosDB.find(p => p.nombre === itemEliminado.nombre);
             if (prodOriginal) {
                 prodOriginal.stock += 1;
             }
 
-            // Quitar el elemento del arreglo
             carrito.splice(index, 1);
-
-            // Actualizar la lista del carrito y el catálogo en pantalla
             actualizarInterfazCarrito();
             renderizarCatalogo();
         }
