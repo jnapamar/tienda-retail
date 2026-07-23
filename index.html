@@ -26,8 +26,12 @@
         .btn-comprar { background: #73246c; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; }
         .btn-comprar:hover { background: #5a1c54; }
         .btn-comprar:disabled { background: #ccc; cursor: not-allowed; }
-        .item-carrito { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #ddd; }
         
+        /* Estilos del ítem del carrito y botón eliminar */
+        .item-carrito { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #ddd; }
+        .btn-eliminar { background: transparent; border: none; color: #ef4444; font-weight: bold; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; line-height: 1; }
+        .btn-eliminar:hover { background: #fee2e2; }
+
         /* Estilos del formulario de envío */
         .form-envio { margin-top: 20px; margin-bottom: 20px; border-top: 1px solid #eee; padding-top: 15px; }
         .form-envio h4 { font-size: 14px; color: #73246c; margin-bottom: 12px; }
@@ -50,7 +54,7 @@
                 <span>Total:</span><span>S/. <span id="cart-total">0.00</span></span>
             </div>
 
-            <!-- Formulario interactivo para capturar los datos requeridos por server.js -->
+            <!-- Formulario interactivo para capturar los datos del cliente -->
             <div class="form-envio">
                 <h4>📝 Datos para el Envío y Yape</h4>
                 <div class="form-group">
@@ -82,7 +86,7 @@
 
     <script>
         const API_URL = '/api/productos';
-        let listaProductosDB = []; // Guardamos copia de los productos locales
+        let listaProductosDB = []; // Copia local de la BD
         let carrito = [];
 
         window.onload = obtenerProductosDelBackend;
@@ -92,14 +96,16 @@
                 const res = await fetch(API_URL);
                 listaProductosDB = await res.json();
                 renderizarCatalogo();
-            } catch (error) { document.getElementById('catalogo-productos').innerHTML = "Error al conectar con la tienda."; }
+            } catch (error) { 
+                document.getElementById('catalogo-productos').innerHTML = "Error al conectar con la tienda."; 
+            }
         }
 
         function renderizarCatalogo() {
             const contenedor = document.getElementById('catalogo-productos');
             contenedor.innerHTML = "";
 
-            if(listaProductosDB.length === 0) {
+            if (listaProductosDB.length === 0) {
                 contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1; text-align:center;'>No hay productos disponibles.</p>";
                 return;
             }
@@ -107,7 +113,6 @@
             listaProductosDB.forEach(p => {
                 const imgUrl = p.imagen ? p.imagen : 'https://via.placeholder.com/180?text=No+Image';
                 
-                // Evaluar si el botón debe deshabilitarse por falta de stock
                 const estaAgotado = p.stock <= 0;
                 const textoBoton = estaAgotado ? 'Agotado' : 'Agregar';
                 const colorStock = estaAgotado ? 'red' : '#16a34a';
@@ -133,17 +138,34 @@
         }
 
         function agregarAlCarrito(nombre, precio) {
-            // Buscar el producto original para comprobar que aún tenga stock virtual antes de agregar
             let prodOriginal = listaProductosDB.find(p => p.nombre === nombre);
             
             if (prodOriginal && prodOriginal.stock > 0) {
-                prodOriginal.stock -= 1; // Restamos temporalmente en la interfaz
+                prodOriginal.stock -= 1; // Restamos temporalmente en la vista
                 carrito.push({ nombre, precio });
                 actualizarInterfazCarrito();
-                renderizarCatalogo(); // Re-dibujar tarjetas para actualizar el número de stock visual
+                renderizarCatalogo(); // Re-dibujar tarjetas para actualizar stock visual
             } else {
                 alert("¡Lo sentimos! Ya no queda más stock disponible de este artículo.");
             }
+        }
+
+        // NUEVA FUNCIÓN: Elimina un producto específico del carrito por su índice
+        function eliminarDelCarrito(index) {
+            const itemEliminado = carrito[index];
+            
+            // Devolver el stock al producto en la copia local
+            let prodOriginal = listaProductosDB.find(p => p.nombre === itemEliminado.nombre);
+            if (prodOriginal) {
+                prodOriginal.stock += 1;
+            }
+
+            // Quitar el elemento del arreglo
+            carrito.splice(index, 1);
+
+            // Actualizar la lista del carrito y el catálogo en pantalla
+            actualizarInterfazCarrito();
+            renderizarCatalogo();
         }
 
         function actualizarInterfazCarrito() {
@@ -152,7 +174,7 @@
             const countSpan = document.getElementById('cart-count');
             countSpan.innerText = carrito.length;
             
-            if(carrito.length === 0) {
+            if (carrito.length === 0) {
                 lista.innerHTML = "<p style='color:#888; font-size:13px;'>El carrito está vacío.</p>";
                 totalSpan.innerText = "0.00";
                 return;
@@ -160,30 +182,36 @@
 
             lista.innerHTML = "";
             let total = 0;
-            carrito.forEach((item) => {
+
+            carrito.forEach((item, index) => {
                 total += item.precio;
-                lista.innerHTML += `<div class="item-carrito"><span>${item.nombre}</span><strong>S/. ${item.precio.toFixed(2)}</strong></div>`;
+                lista.innerHTML += `
+                    <div class="item-carrito">
+                        <div>
+                            <div><strong>${item.nombre}</strong></div>
+                            <div style="color:#73246c;">S/. ${item.precio.toFixed(2)}</div>
+                        </div>
+                        <button class="btn-eliminar" onclick="eliminarDelCarrito(${index})" title="Quitar producto">❌</button>
+                    </div>
+                `;
             });
             totalSpan.innerText = total.toFixed(2);
         }
 
         async function procesarPago() {
-            if(carrito.length === 0) return alert("Agrega productos primero.");
+            if (carrito.length === 0) return alert("Agrega productos primero.");
 
-            // 1. Extraer los datos del formulario
             const nombre = document.getElementById('cli-nombre').value.trim();
             const telefono = document.getElementById('cli-telefono').value.trim();
             const direccion = document.getElementById('cli-direccion').value.trim();
             const numYape = document.getElementById('cli-yape').value.trim();
 
-            // 2. Validaciones locales en el cliente
             if (!nombre || !telefono || !direccion) {
                 return alert("⚠️ Por favor completa tu Nombre, Teléfono y Dirección de entrega.");
             }
 
             const totalCompra = carrito.reduce((sum, item) => sum + item.precio, 0);
 
-            // 3. Estructurar el objeto 'cliente' según espera tu backend en server.js
             const datosCliente = {
                 nombre: nombre,
                 direccion: direccion,
@@ -193,7 +221,6 @@
                 totalConEnvio: totalCompra
             };
 
-            // Estructurar el array 'carrito' con campo 'cantidad' para la resta de stock
             const carritoProcesado = carrito.map(item => ({
                 nombre: item.nombre,
                 precio: item.precio,
@@ -201,7 +228,6 @@
             }));
 
             try {
-                // Enviar la petición POST con la estructura { carrito, cliente }
                 const res = await fetch('/api/productos/comprar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -214,7 +240,6 @@
                 if (res.ok) {
                     alert(`🛒 ¡Muchas gracias ${nombre}! Tu pedido fue registrado con éxito. Verificaremos tu Yape para proceder con el envío.`);
                     
-                    // Limpiar carrito, formulario e interfaz tras el éxito
                     carrito = [];
                     actualizarInterfazCarrito();
                     document.getElementById('cli-nombre').value = '';
@@ -222,7 +247,7 @@
                     document.getElementById('cli-direccion').value = '';
                     document.getElementById('cli-yape').value = '';
                     
-                    obtenerProductosDelBackend(); // Recargar el stock fresco desde MongoDB
+                    obtenerProductosDelBackend();
                 } else {
                     const errorData = await res.json().catch(() => ({}));
                     const mensajeError = errorData.error || errorData.mensaje || "Error en el servidor.";
