@@ -132,6 +132,53 @@ app.get('/api/productos', async (req, res) => {
     }
 });
 
+// API PUT: Modificar / Actualizar Producto
+app.put('/api/productos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const datosActualizados = {
+            codigo: req.body.codigo,
+            vendedor: req.body.vendedor,
+            nombre: req.body.nombre,
+            precio: parseFloat(req.body.precio),
+            categoria: req.body.categoria,
+            descripcion: req.body.descripcion,
+            imagen: req.body.imagen,
+            stock: parseInt(req.body.stock) || 0
+        };
+
+        if (mongoose.connection.readyState === 1) {
+            // Actualización en MongoDB
+            const productoEditado = await Producto.findByIdAndUpdate(
+                id,
+                datosActualizados,
+                { new: true }
+            );
+
+            if (!productoEditado) {
+                return res.status(404).json({ error: "Producto no encontrado en MongoDB" });
+            }
+
+            return res.json({ mensaje: "Producto actualizado en MongoDB con éxito", producto: productoEditado });
+        } else {
+            // Actualización en Contingencia Local (JSON)
+            let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
+            const index = datos.findIndex(p => p.id === Number(id) || p._id === id || p.id === id);
+
+            if (index !== -1) {
+                datos[index] = { ...datos[index], ...datosActualizados };
+                fs.writeFileSync(FILE_DB_PATH, JSON.stringify(datos, null, 2));
+                return res.json({ mensaje: "Producto actualizado en contingencia local con éxito", producto: datos[index] });
+            } else {
+                return res.status(404).json({ error: "Producto no encontrado en archivo local" });
+            }
+        }
+    } catch (error) {
+        console.error("Error al actualizar el producto:", error);
+        res.status(500).json({ error: "Error interno al modificar el producto", detalle: error.message });
+    }
+});
+
 // API DELETE: Eliminar Producto
 app.delete('/api/productos/:id', async (req, res) => {
     try {
