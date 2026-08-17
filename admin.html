@@ -13,8 +13,13 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #555; }
         input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        
+        /* Botones de formulario */
+        .acciones-form { display: flex; gap: 10px; }
         button { background: #222; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
         button:hover { background: #444; }
+        .btn-cancelar { background: #6c757d; display: none; }
+        .btn-cancelar:hover { background: #5a6268; }
 
         /* Estilos para la lista de productos */
         .lista-productos { max-width: 600px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
@@ -23,6 +28,10 @@
         .producto-item img { width: 50px; height: 50px; object-fit: cover; border-radius: 5px; background: #eee; }
         .producto-detalles h4 { font-size: 15px; margin-bottom: 3px; }
         .producto-detalles p { font-size: 12px; color: #666; }
+        
+        .acciones-item { display: flex; gap: 5px; }
+        .btn-editar { background: #ffc107; color: #212529; padding: 8px 12px; border: none; border-radius: 5px; font-size: 13px; font-weight: bold; cursor: pointer; width: auto; }
+        .btn-editar:hover { background: #e0a800; }
         .btn-eliminar { background: #dc3545; color: white; padding: 8px 12px; border: none; border-radius: 5px; font-size: 13px; font-weight: bold; cursor: pointer; width: auto; }
         .btn-eliminar:hover { background: #c82333; }
     </style>
@@ -31,10 +40,14 @@
 
     <header><h1>🛠️ PANEL DE CONTROL: ADMINISTRADOR</h1></header>
 
-    <!-- FORMULARIO PARA AGREGAR PRODUCTO -->
+    <!-- FORMULARIO PARA AGREGAR / EDITAR PRODUCTO -->
     <div class="box">
-        <h3>Subir Nuevo Producto al Catálogo</h3>
+        <h3 id="tituloFormulario">Subir Nuevo Producto al Catálogo</h3>
         <form id="formProducto" onsubmit="enviarAlBackend(event)">
+            <!-- Campo oculto para almacenar el ID del producto cuando se edita -->
+            <input type="hidden" id="productoId">
+            <input type="hidden" id="imagenActual">
+
             <div class="form-group" style="display: flex; gap: 15px;">
                 <div style="flex: 1;">
                     <label>Código del Producto</label>
@@ -65,12 +78,17 @@
             
             <!-- SELECCIÓN DE ARCHIVO DE IMAGEN DESDE PC -->
             <div class="form-group">
-                <label>Imagen del Producto (Subir archivo de la PC)</label>
+                <label id="lblImagen">Imagen del Producto (Subir archivo de la PC)</label>
                 <input type="file" id="imagenFile" accept="image/*" required>
+                <small id="txtHelperImagen" style="color: #666; font-size: 11px; display: none;">Deja este campo vacío si deseas mantener la imagen actual.</small>
             </div>
 
             <div class="form-group"><label>Descripción / Detalles</label><textarea id="descripcion" rows="3" required></textarea></div>
-            <button type="submit" id="btnGuardar">Publicar en la Tienda</button>
+            
+            <div class="acciones-form">
+                <button type="submit" id="btnGuardar">Publicar en la Tienda</button>
+                <button type="button" id="btnCancelar" class="btn-cancelar" onclick="limpiarFormulario()">Cancelar Edición</button>
+            </div>
         </form>
     </div>
 
@@ -81,23 +99,25 @@
     </div>
 
     <script>
+        let productosCache = []; // Almacena temporalmente los productos cargados
+
         document.addEventListener("DOMContentLoaded", cargarProductos);
 
         // 1. CARGAR Y MOSTRAR PRODUCTOS
         async function cargarProductos() {
             try {
                 const res = await fetch('/api/productos');
-                const productos = await res.json();
+                productosCache = await res.json();
                 const contenedor = document.getElementById('contenedorProductos');
 
-                if (!productos || productos.length === 0) {
+                if (!productosCache || productosCache.length === 0) {
                     contenedor.innerHTML = "<p style='color: #888; font-size: 14px;'>No hay productos en el catálogo.</p>";
                     return;
                 }
 
                 contenedor.innerHTML = "";
                 
-                productos.forEach(prod => {
+                productosCache.forEach(prod => {
                     const idUnico = prod._id || prod.id;
                     contenedor.innerHTML += `
                         <div class="producto-item">
@@ -109,7 +129,10 @@
                                     <p>Precio: S/. ${prod.precio} | Stock: ${prod.stock || 0} u.</p>
                                 </div>
                             </div>
-                            <button class="btn-eliminar" onclick="eliminarProducto('${idUnico}')">Eliminar</button>
+                            <div class="acciones-item">
+                                <button class="btn-editar" onclick="prepararEdicion('${idUnico}')">Editar</button>
+                                <button class="btn-eliminar" onclick="eliminarProducto('${idUnico}')">Eliminar</button>
+                            </div>
                         </div>
                     `;
                 });
@@ -118,31 +141,63 @@
             }
         }
 
-        // 2. ENVIAR NUEVO PRODUCTO
+        // 2. CARGAR DATOS EN EL FORMULARIO PARA EDITAR
+        function prepararEdicion(id) {
+            const prod = productosCache.find(p => (p._id || p.id) === id);
+            if (!prod) return;
+
+            // Llenar campos
+            document.getElementById('productoId').value = id;
+            document.getElementById('codigo').value = prod.codigo || '';
+            document.getElementById('vendedor').value = prod.vendedor || '';
+            document.getElementById('nombre').value = prod.nombre || '';
+            document.getElementById('precio').value = prod.precio || '';
+            document.getElementById('stock').value = prod.stock || '';
+            document.getElementById('categoria').value = prod.categoria || 'Tecnología';
+            document.getElementById('descripcion').value = prod.descripcion || '';
+            document.getElementById('imagenActual').value = prod.imagen || '';
+
+            // Quitar requerimiento estricto de imagen al editar
+            document.getElementById('imagenFile').required = false;
+            document.getElementById('txtHelperImagen').style.display = 'block';
+
+            // Cambiar textos y botones del formulario
+            document.getElementById('tituloFormulario').innerText = "✏️ Modificar Producto";
+            document.getElementById('btnGuardar').innerText = "Guardar Cambios";
+            document.getElementById('btnCancelar').style.display = 'block';
+
+            // Desplazar la vista al formulario
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 3. ENVIAR NUEVO PRODUCTO O GUARDAR EDICIÓN (POST / PUT)
         async function enviarAlBackend(e) {
             e.preventDefault();
 
             const btn = document.getElementById('btnGuardar');
-            btn.innerText = "Optimizando imagen y publicando...";
+            const id = document.getElementById('productoId').value;
+            const esEdicion = Boolean(id);
+
+            btn.innerText = esEdicion ? "Guardando cambios..." : "Optimizando imagen y publicando...";
             btn.disabled = true;
 
             const inputImagen = document.getElementById('imagenFile');
             const archivoImagen = inputImagen.files[0];
-            let imagenBase64 = '';
+            let imagenFinal = document.getElementById('imagenActual').value;
 
+            // Si el usuario subió una nueva imagen, la optimizamos
             if (archivoImagen) {
                 try {
-                    // Redimensiona y optimiza la imagen a un peso ideal antes de enviarla
-                    imagenBase64 = await optimizarYConvertirImagen(archivoImagen);
+                    imagenFinal = await optimizarYConvertirImagen(archivoImagen);
                 } catch (err) {
                     alert("❌ Error al procesar la imagen seleccionada.");
-                    btn.innerText = "Publicar en la Tienda";
+                    btn.innerText = esEdicion ? "Guardar Cambios" : "Publicar en la Tienda";
                     btn.disabled = false;
                     return;
                 }
             }
-            
-            const nuevoProducto = {
+
+            const productoData = {
                 codigo: document.getElementById('codigo').value,
                 vendedor: document.getElementById('vendedor').value,
                 nombre: document.getElementById('nombre').value,
@@ -150,32 +205,48 @@
                 stock: parseInt(document.getElementById('stock').value),
                 categoria: document.getElementById('categoria').value,
                 descripcion: document.getElementById('descripcion').value,
-                imagen: imagenBase64
+                imagen: imagenFinal
             };
 
+            const url = esEdicion ? `/api/productos/${id}` : '/api/productos';
+            const metodo = esEdicion ? 'PUT' : 'POST';
+
             try {
-                const res = await fetch('/api/productos', { 
-                    method: 'POST', 
+                const res = await fetch(url, { 
+                    method: metodo, 
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(nuevoProducto)
+                    body: JSON.stringify(productoData)
                 });
                 
                 if (res.ok) {
-                    alert("✅ Producto con imagen optimizada publicado con éxito.");
-                    document.getElementById('formProducto').reset();
+                    alert(esEdicion ? "✅ Producto actualizado con éxito." : "✅ Producto publicado con éxito.");
+                    limpiarFormulario();
                     cargarProductos();
                 } else {
-                    alert("❌ Error al guardar en el servidor. Asegúrate de haber actualizado el límite en server.js.");
+                    alert("❌ Error al guardar en el servidor. Verifica el endpoint backend.");
                 }
             } catch (error) { 
-                alert("Error de conexión al subir el producto."); 
+                alert("Error de conexión al procesar la solicitud."); 
             } finally {
-                btn.innerText = "Publicar en la Tienda";
+                btn.innerText = esEdicion ? "Guardar Cambios" : "Publicar en la Tienda";
                 btn.disabled = false;
             }
         }
 
-        // FUNCIÓN AUXILIAR: Redimensiona imágenes pesadas de la PC a máx 800px para que carguen rápido
+        // 4. RESTABLECER FORMULARIO A MODO CREACIÓN
+        function limpiarFormulario() {
+            document.getElementById('formProducto').reset();
+            document.getElementById('productoId').value = '';
+            document.getElementById('imagenActual').value = '';
+            document.getElementById('imagenFile').required = true;
+            document.getElementById('txtHelperImagen').style.display = 'none';
+
+            document.getElementById('tituloFormulario').innerText = "Subir Nuevo Producto al Catálogo";
+            document.getElementById('btnGuardar').innerText = "Publicar en la Tienda";
+            document.getElementById('btnCancelar').style.display = 'none';
+        }
+
+        // FUNCIÓN AUXILIAR: Redimensiona imágenes pesadas de la PC a máx 800px
         function optimizarYConvertirImagen(archivo) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -185,7 +256,7 @@
                     img.src = e.target.result;
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 800; // Ancho máximo
+                        const MAX_WIDTH = 800;
                         let width = img.width;
                         let height = img.height;
 
@@ -199,8 +270,6 @@
 
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-
-                        // Comprime la imagen a JPEG con 70% de calidad
                         resolve(canvas.toDataURL('image/jpeg', 0.7)); 
                     };
                     img.onerror = (err) => reject(err);
@@ -209,7 +278,7 @@
             });
         }
 
-        // 3. ELIMINAR PRODUCTO
+        // 5. ELIMINAR PRODUCTO
         async function eliminarProducto(id) {
             if (!confirm("⚠️ ¿Estás seguro de eliminar este producto?")) return;
 
