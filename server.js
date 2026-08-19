@@ -118,14 +118,26 @@ app.post('/api/productos', async (req, res) => {
     }
 });
 
-// API GET: Listar Productos
+// API GET: Listar Productos (Soporta filtro por query param: ?categoria=Tecnología)
 app.get('/api/productos', async (req, res) => {
     try {
+        const { categoria } = req.query;
+        let filtro = {};
+
+        // Si se recibe una categoría válida (distinta de "Todas"), aplicamos el filtro sin distinguir mayúsculas/minúsculas
+        if (categoria && categoria !== 'Todas') {
+            filtro.categoria = new RegExp(`^${categoria}$`, 'i');
+        }
+
         if (mongoose.connection.readyState === 1) {
-            const productos = await Producto.find().sort({ _id: -1 });
+            const productos = await Producto.find(filtro).sort({ _id: -1 });
             return res.json(productos);
         } else {
-            return res.json(JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8')));
+            let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
+            if (categoria && categoria !== 'Todas') {
+                datos = datos.filter(prod => prod.categoria && prod.categoria.toLowerCase() === categoria.toLowerCase());
+            }
+            return res.json(datos);
         }
     } catch (error) { 
         res.status(500).json({ error: "Error al obtener productos" }); 
@@ -148,7 +160,6 @@ app.put('/api/productos/:id', async (req, res) => {
         };
 
         if (mongoose.connection.readyState === 1) {
-            // Actualización en MongoDB
             const productoEditado = await Producto.findByIdAndUpdate(
                 id,
                 datosActualizados,
@@ -161,7 +172,6 @@ app.put('/api/productos/:id', async (req, res) => {
 
             return res.json({ mensaje: "Producto actualizado en MongoDB con éxito", producto: productoEditado });
         } else {
-            // Actualización en Contingencia Local (JSON)
             let datos = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             const index = datos.findIndex(p => p.id === Number(id) || p._id === id || p.id === id);
 
@@ -234,11 +244,9 @@ app.post('/api/productos/comprar', async (req, res) => {
         };
 
         if (mongoose.connection.readyState === 1) {
-            // 1. Guardar el pedido en MongoDB
             const nuevoPedido = new Pedido(datosPedido);
             await nuevoPedido.save();
 
-            // 2. Restar Stock
             for (let item of carrito) {
                 const cantidadARestar = parseInt(item.cantidad) || 1;
                 await Producto.updateOne({ nombre: item.nombre }, { $inc: { stock: -cantidadARestar } });
@@ -250,13 +258,11 @@ app.post('/api/productos/comprar', async (req, res) => {
             });
 
         } else {
-            // Contingencia Local (JSON)
             let pedidos = JSON.parse(fs.readFileSync(FILE_PEDIDOS_PATH, 'utf-8'));
             const nuevoPedidoLocal = { _id: Date.now().toString(), ...datosPedido };
             pedidos.unshift(nuevoPedidoLocal);
             fs.writeFileSync(FILE_PEDIDOS_PATH, JSON.stringify(pedidos, null, 2));
 
-            // Restar stock local
             let datosProd = JSON.parse(fs.readFileSync(FILE_DB_PATH, 'utf-8'));
             for (let item of carrito) {
                 const cantidadARestar = parseInt(item.cantidad) || 1;
@@ -283,7 +289,6 @@ app.post('/api/productos/comprar', async (req, res) => {
 // 6. RUTAS DE REPORTES Y GESTIÓN DE PEDIDOS
 // ----------------------------------------------------
 
-// Función unificada para obtener la lista de pedidos
 async function obtenerListaPedidos() {
     if (mongoose.connection.readyState === 1) {
         return await Pedido.find().sort({ fecha: -1 });
@@ -292,7 +297,6 @@ async function obtenerListaPedidos() {
     }
 }
 
-// API GET: Obtener ventas/pedidos (soporta ambas rutas /api/ventas y /api/pedidos)
 app.get(['/api/ventas', '/api/pedidos'], async (req, res) => {
     try {
         const ventas = await obtenerListaPedidos();
@@ -302,7 +306,6 @@ app.get(['/api/ventas', '/api/pedidos'], async (req, res) => {
     }
 });
 
-// API GET: Métricas y Resumen Ejecutivo
 app.get('/api/ventas/reporte', async (req, res) => {
     try {
         const ventas = await obtenerListaPedidos();
@@ -310,7 +313,6 @@ app.get('/api/ventas/reporte', async (req, res) => {
         const totalVentas = ventas.length;
         const ingresosTotales = ventas.reduce((acc, v) => acc + ((v.cliente && v.cliente.totalConEnvio) || 0), 0);
         
-        // Conteo de productos más vendidos
         const productosVendidos = {};
         ventas.forEach(v => {
             if (v.items && Array.isArray(v.items)) {
