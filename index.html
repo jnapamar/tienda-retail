@@ -22,6 +22,36 @@
         .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: fit-content; }
         h3 { margin-bottom: 15px; border-bottom: 2px solid #73246c; padding-bottom: 5px; font-size: 18px; }
         
+        /* Barra de Filtros Superior */
+        .header-catalogo {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #73246c;
+            padding-bottom: 8px;
+        }
+        .header-catalogo h3 { margin-bottom: 0; border-bottom: none; padding-bottom: 0; }
+        
+        .filtro-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filtro-container label { font-size: 13px; font-weight: bold; color: #555; }
+        .filtro-container select {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+            background-color: #fff;
+        }
+        .filtro-container select:focus { border-color: #73246c; }
+
         .btn-principal { background: #22c55e; color: white; border: none; padding: 12px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px; }
         .btn-principal:hover { background: #16a34a; }
         
@@ -61,38 +91,24 @@
         /* =======================================================
            REGLAS RESPONSIVE (MEDIA QUERIES)
            ======================================================= */
-        
-        /* En pantallas medianas y pequeñas (tablets y celulares, < 850px) */
         @media (max-width: 850px) {
             body { padding: 10px; }
-            
-            /* Cambiar el layout de 2 columnas a 1 sola columna */
             .container { 
                 grid-template-columns: 1fr; 
                 gap: 15px; 
             }
-
-            /* Cambiar orden en móviles: los productos arriba y el carrito abajo */
-            .box:nth-child(1) {
-                order: 2; /* Carrito pasa abajo */
-            }
-            .box:nth-child(2) {
-                order: 1; /* Productos pasan arriba */
-            }
-
+            .box:nth-child(1) { order: 2; }
+            .box:nth-child(2) { order: 1; }
             .box { padding: 15px; }
         }
 
-        /* En pantallas muy pequeñas (celulares compactos, < 480px) */
         @media (max-width: 480px) {
             header h1 { font-size: 18px; }
-            
-            /* En teléfonos 1 sola columna para las tarjetas */
-            .catalogo-grid { 
-                grid-template-columns: 1fr; 
-            }
-            
+            .catalogo-grid { grid-template-columns: 1fr; }
             .product-img { height: 160px; }
+            .header-catalogo { flex-direction: column; align-items: flex-start; }
+            .filtro-container { width: 100%; justify-content: space-between; }
+            .filtro-container select { width: 60%; }
         }
     </style>
 </head>
@@ -136,7 +152,18 @@
 
         <!-- Columna 2: Catálogo de Productos -->
         <div class="box">
-            <h3>Productos Disponibles</h3>
+            <div class="header-catalogo">
+                <h3>Productos Disponibles</h3>
+                
+                <!-- SELECTOR DE FILTRO POR CATEGORÍA -->
+                <div class="filtro-container">
+                    <label for="select-categoria">Categoría:</label>
+                    <select id="select-categoria" onchange="filtrarPorCategoria()">
+                        <option value="Todas">Todas las categorías</option>
+                    </select>
+                </div>
+            </div>
+
             <div id="catalogo-productos" class="catalogo-grid"></div>
         </div>
     </div>
@@ -146,16 +173,64 @@
         let listaProductosDB = [];
         let carrito = [];
 
-        window.onload = obtenerProductosDelBackend;
+        window.onload = () => {
+            obtenerProductosDelBackend();
+        };
 
-        async function obtenerProductosDelBackend() {
+        // Carga los productos (filtrados o todos) desde el Backend
+        async function obtenerProductosDelBackend(categoriaSeleccionada = 'Todas') {
             try {
-                const res = await fetch(API_URL);
+                const url = (categoriaSeleccionada === 'Todas') 
+                    ? API_URL 
+                    : `${API_URL}?categoria=${encodeURIComponent(categoriaSeleccionada)}`;
+
+                const res = await fetch(url);
                 listaProductosDB = await res.json();
+                
+                // Si estamos trayendo todos los productos, actualizamos el dropdown de categorías
+                if (categoriaSeleccionada === 'Todas') {
+                    poblarDesplegableCategorias();
+                }
+
+                // Descontar del stock visible lo que el cliente ya agregó al carrito
+                sincronizarStockConCarrito();
+
                 renderizarCatalogo();
             } catch (error) { 
-                document.getElementById('catalogo-productos').innerHTML = "Error al conectar con la tienda."; 
+                document.getElementById('catalogo-productos').innerHTML = "<p style='color:red; grid-column:1/-1;'>Error al conectar con la tienda.</p>"; 
             }
+        }
+
+        // Extrae las categorías existentes y llena el <select>
+        function poblarDesplegableCategorias() {
+            const selectCat = document.getElementById('select-categoria');
+            const valorActual = selectCat.value; // Guardar selección previa
+
+            // Extraer categorías únicas descartando vacías
+            const categoriasUnicas = [...new Set(listaProductosDB.map(p => p.categoria).filter(Boolean))];
+
+            selectCat.innerHTML = `<option value="Todas">Todas las categorías</option>`;
+            categoriasUnicas.forEach(cat => {
+                selectCat.innerHTML += `<option value="${cat}">${cat}</option>`;
+            });
+
+            selectCat.value = valorActual; // Restaurar selección
+        }
+
+        // Se activa cuando el usuario cambia el selector de categorías
+        function filtrarPorCategoria() {
+            const categoria = document.getElementById('select-categoria').value;
+            obtenerProductosDelBackend(categoria);
+        }
+
+        // Ajusta el stock de la lista descargada según lo que ya está metido en el carrito
+        function sincronizarStockConCarrito() {
+            carrito.forEach(item => {
+                let p = listaProductosDB.find(prod => prod.nombre === item.nombre);
+                if (p && p.stock > 0) {
+                    p.stock -= 1;
+                }
+            });
         }
 
         function renderizarCatalogo() {
@@ -163,7 +238,7 @@
             contenedor.innerHTML = "";
 
             if (listaProductosDB.length === 0) {
-                contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1; text-align:center;'>No hay productos disponibles.</p>";
+                contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1; text-align:center;'>No hay productos disponibles en esta categoría.</p>";
                 return;
             }
 
@@ -176,16 +251,16 @@
 
                 contenedor.innerHTML += `
                     <div class="product-card">
-                        <img src="${imgUrl}" class="product-img">
+                        <img src="${imgUrl}" class="product-img" alt="${p.nombre}">
                         <div class="product-body">
                             <div>
-                                <span class="cat-tag">${p.categoria}</span>
+                                <span class="cat-tag">${p.categoria || 'General'}</span>
                                 <div class="product-title">${p.nombre}</div>
-                                <p class="product-desc">${p.descripcion}</p>
+                                <p class="product-desc">${p.descripcion || ''}</p>
                                 <div class="stock-tag" style="color: ${colorStock}">Stock: ${p.stock} unds</div>
                             </div>
                             <div class="product-footer">
-                                <div class="price">S/. ${p.precio.toFixed(2)}</div>
+                                <div class="price">S/. ${parseFloat(p.precio).toFixed(2)}</div>
                                 <button class="btn-comprar" ${estaAgotado ? 'disabled' : ''} onclick="agregarAlCarrito('${p.nombre}', ${p.precio})">${textoBoton}</button>
                             </div>
                         </div>
@@ -241,7 +316,7 @@
                     <div class="item-carrito">
                         <div>
                             <div><strong>${item.nombre}</strong></div>
-                            <div style="color:#73246c;">S/. ${item.precio.toFixed(2)}</div>
+                            <div style="color:#73246c;">S/. ${parseFloat(item.precio).toFixed(2)}</div>
                         </div>
                         <button class="btn-eliminar" onclick="eliminarDelCarrito(${index})" title="Quitar producto">❌</button>
                     </div>
@@ -299,7 +374,9 @@
                     document.getElementById('cli-direccion').value = '';
                     document.getElementById('cli-yape').value = '';
                     
-                    obtenerProductosDelBackend();
+                    // Recargar el catálogo respetando el filtro que el usuario tenga seleccionado actualmente
+                    const catActual = document.getElementById('select-categoria').value;
+                    obtenerProductosDelBackend(catActual);
                 } else {
                     const errorData = await res.json().catch(() => ({}));
                     const mensajeError = errorData.error || errorData.mensaje || "Error en el servidor.";
