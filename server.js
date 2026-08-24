@@ -3,8 +3,13 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
+
+// CLAVE SECRETA PARA TOKENS JWT
+const JWT_SECRET = process.env.JWT_SECRET || 'RIPLEY_SUPER_SECRET_KEY_2026';
 
 // 1. MIDDLEWARES
 app.use(cors());
@@ -16,10 +21,12 @@ app.use(express.static(__dirname));
 const PORT = process.env.PORT || 5000;
 const FILE_DB_PATH = path.join(__dirname, 'backup_productos.json');
 const FILE_PEDIDOS_PATH = path.join(__dirname, 'backup_pedidos.json');
+const FILE_USUARIOS_PATH = path.join(__dirname, 'backup_usuarios.json');
 
 // Asegurar archivos JSON de contingencia local
 if (!fs.existsSync(FILE_DB_PATH)) fs.writeFileSync(FILE_DB_PATH, JSON.stringify([]));
 if (!fs.existsSync(FILE_PEDIDOS_PATH)) fs.writeFileSync(FILE_PEDIDOS_PATH, JSON.stringify([]));
+if (!fs.existsSync(FILE_USUARIOS_PATH)) fs.writeFileSync(FILE_USUARIOS_PATH, JSON.stringify([]));
 
 // Conexión a MongoDB
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tienda_retail_db';
@@ -29,8 +36,38 @@ mongoose.connect(MONGO_URI)
     .catch((err) => console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message));
 
 // ----------------------------------------------------
+// MIDDLEWARE DE AUTENTICACIÓN (GUARDIÁN DE SEGURIDAD)
+// ----------------------------------------------------
+function verificarAuth(req, res, next) {
+    const authHeader = req.header('Authorization');
+
+    if (!authHeader) {
+        return res.status(401).json({ error: "Acceso denegado. No se proporcionó un token de autenticación." });
+    }
+
+    try {
+        const token = authHeader.replace('Bearer ', '');
+        const verificado = jwt.verify(token, JWT_SECRET);
+        req.usuario = verificado;
+        next(); // Permite la ejecución del endpoint
+    } catch (error) {
+        return res.status(403).json({ error: "Token inválido o expirado. Por favor, vuelve a iniciar sesión." });
+    }
+}
+
+// ----------------------------------------------------
 // 2. ESQUEMAS DE BASE DE DATOS
 // ----------------------------------------------------
+
+// Esquema de Usuarios Administradores
+const UsuarioSchema = new mongoose.Schema({
+    nombre: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    rol: { type: String, default: 'admin' }
+});
+
+const Usuario = mongoose.model('Usuario', UsuarioSchema);
 
 // Esquema de Productos
 const ProductoSchema = new mongoose.Schema({
@@ -84,11 +121,117 @@ app.get('/admin', (req, res) => {
 });
 
 // ----------------------------------------------------
-// 4. RUTAS DE API PRODUCTOS
+// 4. RUTAS DE AUTENTICACIÓN Y GESTIÓN DE USUARIOS
 // ----------------------------------------------------
 
-// API POST: Crear Producto
-app.post('/api/productos', async (req, res) => {
+// API POST: Registrar un Administrador
+app.post('/api/auth/registro', async (req, res) => {
+    try {
+        const { nombre, email, password } = req.body;
+
+        if (!nombre || !email || !password) {
+            return res.status(400).json({ error: "Todos los campos (nombre, email, password) son obligatorios." });
+        }
+
+        // Encriptar la contraseña
+        const salt = await bcrypt.genSalt(10);
+        const passwordEncriptada = await bcrypt.hash(password, salt);
+
+        if (mongoose.connection.readyState === 1) {
+            const usuarioExistente = await Usuario.findOne({ email });
+            if (usuarioExistente) {
+                return res.status(400).json({ error: "El correo electrónico ya está registrado." });
+            }
+
+            const nuevoUsuario = new Usuario({
+                nombre,
+                email,
+                password: passwordEncriptada,
+                rol: 'admin'
+            });
+
+            await nuevoUsuario.save();
+            return res.status(201).json({ mensaje: "Usuario administrador registrado con éxito en MongoDB." });
+        } else {
+            let usuarios = JSON.parse(fs.readFileSync(FILE_USUARIOS_PATH, 'utf-8'));
+            if (usuarios.some(u => u.email === email)) {
+                return res.status(400).json({ error: "El correo electrónico ya está registrado localmente." });
+            }
+
+            const nuevoUsuarioLocal = {
+                _id: Date.now().toString(),
+                nombre,
+                email,
+                password: passwordEncriptada,
+                rol: 'admin'
+            };
+
+            usuarios.push(nuevoUsuarioLocal);
+            fs.writeFileSync(FILE_USUARIOS_PATH, JSON.stringify(usuarios, null, 2));
+            return res.status(201).json({ mensaje: "Usuario administrador registrado con éxito localmente." });
+        }
+    } catch (error) {
+        console.error("Error en el registro:", error);
+        res.status(500).json({ error: "Error al registrar el usuario." });
+    }
+});
+
+// API POST: Login / Iniciar Sesión (Obtener Token)
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: "Proporcione email y contraseña." });
+        }
+
+        let usuarioEncontrado = null;
+
+        if (mongoose.connection.readyState === 1) {
+            usuarioEncontrado = await Usuario.findOne({ email });
+        } else {
+            const usuarios = JSON.parse(fs.readFileSync(FILE_USUARIOS_PATH, 'utf-8'));
+            usuarioEncontrado = usuarios.find(u => u.email === email);
+        }
+
+        if (!usuarioEncontrado) {
+            return res.status(400).json({ error: "Credenciales inválidas (Usuario no encontrado)." });
+        }
+
+        // Verificar la contraseña
+        const esCorrecta = await bcrypt.compare(password, usuarioEncontrado.password);
+        if (!esCorrecta) {
+            return res.status(400).json({ error: "Credenciales inválidas (Contraseña incorrecta)." });
+        }
+
+        // Crear Token JWT válido por 8 horas
+        const token = jwt.sign(
+            { id: usuarioEncontrado._id, rol: usuarioEncontrado.rol },
+            JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
+        res.json({
+            mensaje: "¡Inicio de sesión exitoso!",
+            token,
+            usuario: {
+                nombre: usuarioEncontrado.nombre,
+                email: usuarioEncontrado.email,
+                rol: usuarioEncontrado.rol
+            }
+        });
+    } catch (error) {
+        console.error("Error en el login:", error);
+        res.status(500).json({ error: "Error interno al iniciar sesión." });
+    }
+});
+
+// ----------------------------------------------------
+// 5. RUTAS DE API PRODUCTOS
+// ----------------------------------------------------
+
+// API POST: Crear Producto (PROTEGIDO)
+app.post('/api/productos', verificarAuth, async (req, res) => {
     try {
         const datosProducto = {
             codigo: req.body.codigo || 'S/C',
@@ -118,13 +261,12 @@ app.post('/api/productos', async (req, res) => {
     }
 });
 
-// API GET: Listar Productos (Soporta filtro por query param: ?categoria=Tecnología)
+// API GET: Listar Productos (PÚBLICO - Soporta filtro ?categoria=Tecnología)
 app.get('/api/productos', async (req, res) => {
     try {
         const { categoria } = req.query;
         let filtro = {};
 
-        // Si se recibe una categoría válida (distinta de "Todas"), aplicamos el filtro sin distinguir mayúsculas/minúsculas
         if (categoria && categoria !== 'Todas') {
             filtro.categoria = new RegExp(`^${categoria}$`, 'i');
         }
@@ -144,8 +286,8 @@ app.get('/api/productos', async (req, res) => {
     }
 });
 
-// API PUT: Modificar / Actualizar Producto
-app.put('/api/productos/:id', async (req, res) => {
+// API PUT: Modificar / Actualizar Producto (PROTEGIDO)
+app.put('/api/productos/:id', verificarAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const datosActualizados = {
@@ -189,8 +331,8 @@ app.put('/api/productos/:id', async (req, res) => {
     }
 });
 
-// API DELETE: Eliminar Producto
-app.delete('/api/productos/:id', async (req, res) => {
+// API DELETE: Eliminar Producto (PROTEGIDO)
+app.delete('/api/productos/:id', verificarAuth, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -209,7 +351,7 @@ app.delete('/api/productos/:id', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 5. RUTAS DE VENTAS Y COMPRAS
+// 6. RUTAS DE VENTAS Y COMPRAS (PÚBLICO)
 // ----------------------------------------------------
 
 // API POST: Procesar Compra y Guardar Registro de Venta
@@ -286,7 +428,7 @@ app.post('/api/productos/comprar', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 6. RUTAS DE REPORTES Y GESTIÓN DE PEDIDOS
+// 7. RUTAS DE REPORTES Y GESTIÓN DE PEDIDOS (PROTEGIDO)
 // ----------------------------------------------------
 
 async function obtenerListaPedidos() {
@@ -297,7 +439,7 @@ async function obtenerListaPedidos() {
     }
 }
 
-app.get(['/api/ventas', '/api/pedidos'], async (req, res) => {
+app.get(['/api/ventas', '/api/pedidos'], verificarAuth, async (req, res) => {
     try {
         const ventas = await obtenerListaPedidos();
         return res.json(ventas);
@@ -306,7 +448,7 @@ app.get(['/api/ventas', '/api/pedidos'], async (req, res) => {
     }
 });
 
-app.get('/api/ventas/reporte', async (req, res) => {
+app.get('/api/ventas/reporte', verificarAuth, async (req, res) => {
     try {
         const ventas = await obtenerListaPedidos();
 
