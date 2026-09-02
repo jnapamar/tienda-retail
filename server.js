@@ -28,44 +28,8 @@ if (!fs.existsSync(FILE_DB_PATH)) fs.writeFileSync(FILE_DB_PATH, JSON.stringify(
 if (!fs.existsSync(FILE_PEDIDOS_PATH)) fs.writeFileSync(FILE_PEDIDOS_PATH, JSON.stringify([]));
 if (!fs.existsSync(FILE_USUARIOS_PATH)) fs.writeFileSync(FILE_USUARIOS_PATH, JSON.stringify([]));
 
-// Conexión a MongoDB
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tienda_retail_db';
-
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ Conectado con éxito a MongoDB'))
-    .catch((err) => console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message));
-
 // ----------------------------------------------------
-// MIDDLEWARE DE AUTENTICACIÓN Y AUTORIZACIÓN
-// ----------------------------------------------------
-function verificarAuth(req, res, next) {
-    const authHeader = req.header('Authorization');
-
-    if (!authHeader) {
-        return res.status(401).json({ error: "Acceso denegado. No se proporcionó un token de autenticación." });
-    }
-
-    try {
-        const token = authHeader.replace('Bearer ', '');
-        const verificado = jwt.verify(token, JWT_SECRET);
-        req.usuario = verificado;
-        next(); // Permite la ejecución del endpoint
-    } catch (error) {
-        return res.status(403).json({ error: "Token inválido o expirado. Por favor, vuelve a iniciar sesión." });
-    }
-}
-
-// Middleware opcional para asegurar que solo un Administrador realice ciertas acciones
-function soloAdmin(req, res, next) {
-    if (req.usuario && req.usuario.rol === 'admin') {
-        next();
-    } else {
-        return res.status(403).json({ error: "Acceso denegado. Se requieren permisos de Administrador." });
-    }
-}
-
-// ----------------------------------------------------
-// 2. ESQUEMAS DE BASE DE DATOS
+// ESQUEMAS Y MODELOS DE BASE DE DATOS
 // ----------------------------------------------------
 
 // Esquema de Usuarios
@@ -114,6 +78,103 @@ const PedidoSchema = new mongoose.Schema({
 });
 
 const Pedido = mongoose.model('Pedido', PedidoSchema);
+
+// ----------------------------------------------------
+// FUNCIÓN PARA CREAR USUARIO ADMIN AUTOMÁTICAMENTE
+// ----------------------------------------------------
+async function crearAdminPorDefecto() {
+    try {
+        const emailAdmin = 'admin@tienda.com';
+        const passAdmin = 'admin123';
+        const salt = await bcrypt.genSalt(10);
+        const passwordEncriptada = await bcrypt.hash(passAdmin, salt);
+
+        if (mongoose.connection.readyState === 1) {
+            // Caso 1: MongoDB Conectado
+            const adminExistente = await Usuario.findOne({ email: emailAdmin });
+            if (!adminExistente) {
+                const nuevoAdmin = new Usuario({
+                    nombre: 'Administrador Principal',
+                    email: emailAdmin,
+                    password: passwordEncriptada,
+                    rol: 'admin'
+                });
+                await nuevoAdmin.save();
+                console.log('--------------------------------------------------');
+                console.log('✅ Usuario Administrador inicial creado en MongoDB:');
+                console.log(`   Correo: ${emailAdmin}`);
+                console.log(`   Clave:  ${passAdmin}`);
+                console.log('--------------------------------------------------');
+            } else {
+                console.log('ℹ️ El usuario administrador ya se encuentra en MongoDB.');
+            }
+        } else {
+            // Caso 2: Contingencia Archivos JSON
+            let usuarios = JSON.parse(fs.readFileSync(FILE_USUARIOS_PATH, 'utf-8'));
+            const existeLocal = usuarios.some(u => u.email === emailAdmin);
+            if (!existeLocal) {
+                const nuevoAdminLocal = {
+                    _id: Date.now().toString(),
+                    nombre: 'Administrador Principal',
+                    email: emailAdmin,
+                    password: passwordEncriptada,
+                    rol: 'admin'
+                };
+                usuarios.push(nuevoAdminLocal);
+                fs.writeFileSync(FILE_USUARIOS_PATH, JSON.stringify(usuarios, null, 2));
+                console.log('--------------------------------------------------');
+                console.log('✅ Usuario Administrador inicial creado en JSON Local:');
+                console.log(`   Correo: ${emailAdmin}`);
+                console.log(`   Clave:  ${passAdmin}`);
+                console.log('--------------------------------------------------');
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error al verificar/crear el usuario admin por defecto:', error.message);
+    }
+}
+
+// Conexión a MongoDB
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/tienda_retail_db';
+
+mongoose.connect(MONGO_URI)
+    .then(async () => {
+        console.log('✅ Conectado con éxito a MongoDB');
+        await crearAdminPorDefecto();
+    })
+    .catch(async (err) => {
+        console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message);
+        await crearAdminPorDefecto();
+    });
+
+// ----------------------------------------------------
+// MIDDLEWARE DE AUTENTICACIÓN Y AUTORIZACIÓN
+// ----------------------------------------------------
+function verificarAuth(req, res, next) {
+    const authHeader = req.header('Authorization');
+
+    if (!authHeader) {
+        return res.status(401).json({ error: "Acceso denegado. No se proporcionó un token de autenticación." });
+    }
+
+    try {
+        const token = authHeader.replace('Bearer ', '');
+        const verificado = jwt.verify(token, JWT_SECRET);
+        req.usuario = verificado;
+        next(); // Permite la ejecución del endpoint
+    } catch (error) {
+        return res.status(403).json({ error: "Token inválido o expirado. Por favor, vuelve a iniciar sesión." });
+    }
+}
+
+// Middleware opcional para asegurar que solo un Administrador realice ciertas acciones
+function soloAdmin(req, res, next) {
+    if (req.usuario && req.usuario.rol === 'admin') {
+        next();
+    } else {
+        return res.status(403).json({ error: "Acceso denegado. Se requieren permisos de Administrador." });
+    }
+}
 
 // ----------------------------------------------------
 // 3. RUTAS DE NAVEGACIÓN Y VISTAS HTML
