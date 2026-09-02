@@ -10,6 +10,7 @@
         header { background: #222; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
         header h1 { font-size: 20px; }
         .user-info { display: flex; align-items: center; gap: 15px; font-size: 14px; }
+        .badge-rol { background: #007bff; color: white; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
         .btn-logout { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; width: auto; font-size: 12px; }
         .btn-logout:hover { background: #c82333; }
 
@@ -65,15 +66,49 @@
     <!-- VISTA 2: PANEL ADMINISTRADOR (Visible cuando SÍ hay token) -->
     <div id="seccionPanel" style="display: none;">
         <header>
-            <h1>🛠️ PANEL DE CONTROL: ADMINISTRADOR</h1>
+            <h1>🛠️ PANEL DE CONTROL</h1>
             <div class="user-info">
                 <span id="lblUsuario">Cargando...</span>
+                <span id="lblRol" class="badge-rol"></span>
                 <button class="btn-logout" onclick="cerrarSesion()">Cerrar Sesión</button>
             </div>
         </header>
 
-        <!-- FORMULARIO PARA AGREGAR / EDITAR PRODUCTO -->
-        <div class="box">
+        <!-- FORMULARIO PARA REGISTRAR NUEVO USUARIO (Solo Admin) -->
+        <div class="box solo-admin">
+            <h3>👤 Registrar Nuevo Usuario</h3>
+            <form id="formUsuario" onsubmit="crearUsuario(event)">
+                <div class="form-group" style="display: flex; gap: 15px;">
+                    <div style="flex: 1;">
+                        <label>Nombre del Usuario</label>
+                        <input type="text" id="usuarioNombre" required placeholder="Ej. Juan Pérez">
+                    </div>
+                    <div style="flex: 1;">
+                        <label>Rol de Usuario</label>
+                        <select id="usuarioRol">
+                            <option value="vendedor">Vendedor</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group" style="display: flex; gap: 15px;">
+                    <div style="flex: 1;">
+                        <label>Correo Electrónico</label>
+                        <input type="email" id="usuarioEmail" required placeholder="correo@tienda.com">
+                    </div>
+                    <div style="flex: 1;">
+                        <label>Contraseña</label>
+                        <input type="password" id="usuarioPassword" required placeholder="••••••••">
+                    </div>
+                </div>
+
+                <button type="submit" id="btnCrearUsuario" style="background: #28a745;">Crear Usuario</button>
+            </form>
+        </div>
+
+        <!-- FORMULARIO PARA AGREGAR / EDITAR PRODUCTO (Solo Admin) -->
+        <div class="box solo-admin">
             <h3 id="tituloFormulario">Subir Nuevo Producto al Catálogo</h3>
             <form id="formProducto" onsubmit="enviarAlBackend(event)">
                 <input type="hidden" id="productoId">
@@ -138,7 +173,7 @@
 
         document.addEventListener("DOMContentLoaded", verificarSesion);
 
-        // 0. CONTROL DE SESIÓN Y VISTAS
+        // 0. CONTROL DE SESIÓN, ROLES Y VISTAS
         function verificarSesion() {
             const token = localStorage.getItem('token');
             const usuarioStr = localStorage.getItem('usuario');
@@ -146,10 +181,20 @@
             if (token) {
                 document.getElementById('seccionLogin').style.display = 'none';
                 document.getElementById('seccionPanel').style.display = 'block';
+
+                let usuario = {};
                 if (usuarioStr) {
-                    const usuario = JSON.parse(usuarioStr);
+                    usuario = JSON.parse(usuarioStr);
                     document.getElementById('lblUsuario').innerText = `👤 ${usuario.nombre || usuario.email}`;
+                    document.getElementById('lblRol').innerText = usuario.rol || 'vendedor';
                 }
+
+                // Control visual según el rol
+                const esAdmin = usuario.rol === 'admin';
+                document.querySelectorAll('.solo-admin').forEach(el => {
+                    el.style.display = esAdmin ? 'block' : 'none';
+                });
+
                 cargarProductos();
             } else {
                 document.getElementById('seccionLogin').style.display = 'block';
@@ -203,6 +248,10 @@
                 productosCache = await res.json();
                 const contenedor = document.getElementById('contenedorProductos');
 
+                const usuarioStr = localStorage.getItem('usuario');
+                const usuario = usuarioStr ? JSON.parse(usuarioStr) : {};
+                const esAdmin = usuario.rol === 'admin';
+
                 if (!productosCache || productosCache.length === 0) {
                     contenedor.innerHTML = "<p style='color: #888; font-size: 14px;'>No hay productos en el catálogo.</p>";
                     return;
@@ -212,6 +261,14 @@
                 
                 productosCache.forEach(prod => {
                     const idUnico = prod._id || prod.id;
+
+                    const accionesHTML = esAdmin ? `
+                        <div class="acciones-item">
+                            <button class="btn-editar" onclick="prepararEdicion('${idUnico}')">Editar</button>
+                            <button class="btn-eliminar" onclick="eliminarProducto('${idUnico}')">Eliminar</button>
+                        </div>
+                    ` : '';
+
                     contenedor.innerHTML += `
                         <div class="producto-item">
                             <div class="producto-info">
@@ -222,10 +279,7 @@
                                     <p>Precio: S/. ${prod.precio} | Stock: ${prod.stock || 0} u.</p>
                                 </div>
                             </div>
-                            <div class="acciones-item">
-                                <button class="btn-editar" onclick="prepararEdicion('${idUnico}')">Editar</button>
-                                <button class="btn-eliminar" onclick="eliminarProducto('${idUnico}')">Eliminar</button>
-                            </div>
+                            ${accionesHTML}
                         </div>
                     `;
                 });
@@ -234,7 +288,51 @@
             }
         }
 
-        // 2. PREPARAR FORMULARIO PARA EDITAR
+        // 2. CREAR NUEVO USUARIO (ADMIN)
+        async function crearUsuario(e) {
+            e.preventDefault();
+
+            const token = localStorage.getItem('token');
+            if (!token) return cerrarSesion();
+
+            const btn = document.getElementById('btnCrearUsuario');
+            btn.innerText = "Creando usuario...";
+            btn.disabled = true;
+
+            const nuevoUsuario = {
+                nombre: document.getElementById('usuarioNombre').value,
+                email: document.getElementById('usuarioEmail').value,
+                password: document.getElementById('usuarioPassword').value,
+                rol: document.getElementById('usuarioRol').value
+            };
+
+            try {
+                const res = await fetch('/api/usuarios', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(nuevoUsuario)
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    alert("✅ Usuario creado exitosamente.");
+                    document.getElementById('formUsuario').reset();
+                } else {
+                    alert("❌ Error: " + (data.error || "No se pudo crear el usuario."));
+                }
+            } catch (error) {
+                alert("❌ Error de conexión al crear usuario.");
+            } finally {
+                btn.innerText = "Crear Usuario";
+                btn.disabled = false;
+            }
+        }
+
+        // 3. PREPARAR FORMULARIO PARA EDITAR
         function prepararEdicion(id) {
             const prod = productosCache.find(p => (p._id || p.id) === id);
             if (!prod) return;
@@ -259,16 +357,12 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // 3. ENVIAR NUEVO PRODUCTO O GUARDAR EDICIÓN (POST / PUT CON TOKEN)
+        // 4. ENVIAR NUEVO PRODUCTO O GUARDAR EDICIÓN
         async function enviarAlBackend(e) {
             e.preventDefault();
 
             const token = localStorage.getItem('token');
-            if (!token) {
-                alert("⚠️ Tu sesión ha expirado. Por favor inicia sesión nuevamente.");
-                cerrarSesion();
-                return;
-            }
+            if (!token) return cerrarSesion();
 
             const btn = document.getElementById('btnGuardar');
             const id = document.getElementById('productoId').value;
@@ -311,7 +405,7 @@
                     method: metodo, 
                     headers: { 
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}` // Header JWT integrado
+                        'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify(productoData)
                 });
@@ -334,7 +428,7 @@
             }
         }
 
-        // 4. RESTABLECER FORMULARIO
+        // 5. RESTABLECER FORMULARIO
         function limpiarFormulario() {
             document.getElementById('formProducto').reset();
             document.getElementById('productoId').value = '';
@@ -379,14 +473,10 @@
             });
         }
 
-        // 5. ELIMINAR PRODUCTO (CON TOKEN)
+        // 6. ELIMINAR PRODUCTO (CON TOKEN)
         async function eliminarProducto(id) {
             const token = localStorage.getItem('token');
-            if (!token) {
-                alert("⚠️ Tu sesión ha expirado. Por favor inicia sesión nuevamente.");
-                cerrarSesion();
-                return;
-            }
+            if (!token) return cerrarSesion();
 
             if (!confirm("⚠️ ¿Estás seguro de eliminar este producto?")) return;
 
@@ -394,7 +484,7 @@
                 const res = await fetch(`/api/productos/${id}`, { 
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${token}` // Header JWT integrado
+                        'Authorization': `Bearer ${token}`
                     }
                 });
                 const resultado = await res.json();
