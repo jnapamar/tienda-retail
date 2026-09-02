@@ -36,7 +36,7 @@ mongoose.connect(MONGO_URI)
     .catch((err) => console.log('⚠️ No se pudo conectar a MongoDB. Usando contingencia local por archivos.', err.message));
 
 // ----------------------------------------------------
-// MIDDLEWARE DE AUTENTICACIÓN (GUARDIÁN DE SEGURIDAD)
+// MIDDLEWARE DE AUTENTICACIÓN Y AUTORIZACIÓN
 // ----------------------------------------------------
 function verificarAuth(req, res, next) {
     const authHeader = req.header('Authorization');
@@ -55,16 +55,25 @@ function verificarAuth(req, res, next) {
     }
 }
 
+// Middleware opcional para asegurar que solo un Administrador realice ciertas acciones
+function soloAdmin(req, res, next) {
+    if (req.usuario && req.usuario.rol === 'admin') {
+        next();
+    } else {
+        return res.status(403).json({ error: "Acceso denegado. Se requieren permisos de Administrador." });
+    }
+}
+
 // ----------------------------------------------------
 // 2. ESQUEMAS DE BASE DE DATOS
 // ----------------------------------------------------
 
-// Esquema de Usuarios Administradores
+// Esquema de Usuarios
 const UsuarioSchema = new mongoose.Schema({
     nombre: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    rol: { type: String, default: 'admin' }
+    rol: { type: String, default: 'vendedor' } // vendedor, admin
 });
 
 const Usuario = mongoose.model('Usuario', UsuarioSchema);
@@ -124,7 +133,7 @@ app.get('/admin', (req, res) => {
 // 4. RUTAS DE AUTENTICACIÓN Y GESTIÓN DE USUARIOS
 // ----------------------------------------------------
 
-// API POST: Registrar un Administrador
+// API POST: Registrar un Administrador inicial (Público / Registro Inicial)
 app.post('/api/auth/registro', async (req, res) => {
     try {
         const { nombre, email, password } = req.body;
@@ -176,6 +185,65 @@ app.post('/api/auth/registro', async (req, res) => {
     }
 });
 
+// API POST: Crear Usuario desde el Panel Admin (PROTEGIDO)
+app.post('/api/usuarios', verificarAuth, soloAdmin, async (req, res) => {
+    try {
+        const { nombre, email, password, rol } = req.body;
+
+        if (!nombre || !email || !password) {
+            return res.status(400).json({ error: "Nombre, email y contraseña son obligatorios." });
+        }
+
+        // Encriptar contraseña
+        const salt = await bcrypt.genSalt(10);
+        const passwordEncriptada = await bcrypt.hash(password, salt);
+        const rolAsignado = rol || 'vendedor';
+
+        if (mongoose.connection.readyState === 1) {
+            const usuarioExistente = await Usuario.findOne({ email });
+            if (usuarioExistente) {
+                return res.status(400).json({ error: "El correo electrónico ya está registrado." });
+            }
+
+            const nuevoUsuario = new Usuario({
+                nombre,
+                email,
+                password: passwordEncriptada,
+                rol: rolAsignado
+            });
+
+            await nuevoUsuario.save();
+            return res.status(201).json({
+                mensaje: "Usuario creado exitosamente.",
+                usuario: { id: nuevoUsuario._id, nombre, email, rol: rolAsignado }
+            });
+        } else {
+            let usuarios = JSON.parse(fs.readFileSync(FILE_USUARIOS_PATH, 'utf-8'));
+            if (usuarios.some(u => u.email === email)) {
+                return res.status(400).json({ error: "El correo electrónico ya está registrado localmente." });
+            }
+
+            const nuevoUsuarioLocal = {
+                _id: Date.now().toString(),
+                nombre,
+                email,
+                password: passwordEncriptada,
+                rol: rolAsignado
+            };
+
+            usuarios.push(nuevoUsuarioLocal);
+            fs.writeFileSync(FILE_USUARIOS_PATH, JSON.stringify(usuarios, null, 2));
+            return res.status(201).json({
+                mensaje: "Usuario creado exitosamente en contingencia local.",
+                usuario: { id: nuevoUsuarioLocal._id, nombre, email, rol: rolAsignado }
+            });
+        }
+    } catch (error) {
+        console.error("Error al crear usuario:", error);
+        res.status(500).json({ error: "Error interno al crear el usuario." });
+    }
+});
+
 // API POST: Login / Iniciar Sesión (Obtener Token)
 app.post('/api/auth/login', async (req, res) => {
     try {
@@ -204,7 +272,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: "Credenciales inválidas (Contraseña incorrecta)." });
         }
 
-        // Crear Token JWT válido por 8 horas
+        // Crear Token JWT válido por 8 horas (se incluye el ROL en el payload)
         const token = jwt.sign(
             { id: usuarioEncontrado._id, rol: usuarioEncontrado.rol },
             JWT_SECRET,
