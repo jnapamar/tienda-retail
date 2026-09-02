@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 
-// CLAVE SECRETA PARA TOKENS JWT
+// CLAVE SECRETA PARA TOKENS JWTi
 const JWT_SECRET = process.env.JWT_SECRET || 'RIPLEY_SUPER_SECRET_KEY_2026';
 
 // 1. MIDDLEWARES
